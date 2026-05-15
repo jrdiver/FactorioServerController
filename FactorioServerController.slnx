@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="FactorioLibrary/FactorioLibrary.csproj" />
+  <Project Path="FactorioServerController/FactorioServerController.csproj" />
+  <Project Path="FactorioServerTest/FactorioServerTest.csproj" />
+</Solution>
