@@ -1,30 +1,32 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
+<div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="">FactorioServerController</a>
+        <a class="navbar-brand d-flex align-items-center gap-2" href="">
+            <i class="bi bi-hdd-network-fill text-accent"></i>
+            <span>Factorio Manager</span>
+        </a>
     </div>
 </div>
 
 <input type="checkbox" title="Navigation menu" class="navbar-toggler" />
 
 <div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
+    <nav class="nav flex-column mt-3">
+        <div class="nav-item px-3 mb-1">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+                <i class="bi bi-grid-1x2-fill me-2" aria-hidden="true"></i> Dashboard
             </NavLink>
         </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
+        <div class="nav-item px-3 mb-1">
+            <NavLink class="nav-link" href="versions">
+                <i class="bi bi-cloud-download-fill me-2" aria-hidden="true"></i> Versions
             </NavLink>
         </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
+        <div class="nav-item px-3 mb-1">
+            <NavLink class="nav-link" href="settings">
+                <i class="bi bi-gear-fill me-2" aria-hidden="true"></i> Global Settings
             </NavLink>
         </div>
     </nav>
 </div>
-

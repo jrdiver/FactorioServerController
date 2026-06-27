@@ -1,0 +1,174 @@
+@page "/instance/{Id:int}"
+@using FactorioLibrary.Data
+@using FactorioLibrary.Models
+@using FactorioLibrary.Services
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject InstanceManager InstanceManager
+@inject NavigationManager Navigation
+
+<PageTitle>Server Settings - @(Instance?.Name ?? "Loading...")</PageTitle>
+
+@if (Instance == null)
+{
+    <div class="d-flex justify-content-center mt-5">
+        <div class="spinner-border text-accent" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else
+{
+    bool isRunning = InstanceManager.IsRunning(Instance.Id);
+
+    <div class="container-fluid py-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <a href="/" class="btn btn-glass-secondary mb-3"><i class="bi bi-arrow-left me-2"></i>Back to Dashboard</a>
+                <h1 class="display-6 text-accent mb-0">
+                    <span class="status-dot @(isRunning ? "running" : "stopped")" title="@(isRunning ? "Running" : "Stopped")"></span>
+                    @Instance.Name
+                </h1>
+            </div>
+            
+            <div class="d-flex gap-2">
+                @if (isRunning)
+                {
+                    <button class="btn btn-glass-secondary text-danger" @onclick="StopServer"><i class="bi bi-stop-fill me-2"></i>Stop Server</button>
+                }
+                else
+                {
+                    <button class="btn btn-glass" @onclick="StartServer"><i class="bi bi-play-fill me-2"></i>Start Server</button>
+                }
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="glass-card mb-4">
+                    <h4 class="mb-4"><i class="bi bi-sliders me-2"></i>General Settings</h4>
+                    
+                    <EditForm Model="@Instance" OnValidSubmit="SaveChanges">
+                        <DataAnnotationsValidator />
+                        
+                        <div class="mb-3">
+                            <label class="form-label text-muted">Server Name</label>
+                            <InputText @bind-Value="Instance.Name" class="form-control bg-transparent text-white border-secondary" />
+                            <ValidationMessage For="@(() => Instance.Name)" />
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label text-muted">Game Port</label>
+                                <InputNumber @bind-Value="Instance.Port" class="form-control bg-transparent text-white border-secondary" />
+                                <ValidationMessage For="@(() => Instance.Port)" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-muted">Factorio Version</label>
+                                <InputText @bind-Value="Instance.AssignedVersion" class="form-control bg-transparent text-white border-secondary" placeholder="e.g. 1.1.107 or Latest" />
+                                <ValidationMessage For="@(() => Instance.AssignedVersion)" />
+                            </div>
+                        </div>
+
+                        <h5 class="mt-4 mb-3 text-muted border-bottom border-secondary pb-2"><i class="bi bi-terminal me-2"></i>RCON Configuration</h5>
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label text-muted">RCON Port</label>
+                                <InputNumber @bind-Value="Instance.RconPort" class="form-control bg-transparent text-white border-secondary" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-muted">RCON Password</label>
+                                <InputText @bind-Value="Instance.RconPassword" type="password" class="form-control bg-transparent text-white border-secondary" />
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center">
+                            @if (ShowSaveSuccess)
+                            {
+                                <span class="text-success"><i class="bi bi-check-circle-fill me-2"></i>Settings saved successfully!</span>
+                            }
+                            else
+                            {
+                                <span></span>
+                            }
+                            <button type="submit" class="btn btn-glass"><i class="bi bi-save-fill me-2"></i>Save Changes</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="glass-card mb-4">
+                    <h4 class="mb-4"><i class="bi bi-info-circle me-2"></i>Quick Actions</h4>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-glass-secondary text-start"><i class="bi bi-puzzle me-2"></i>Manage Mods</button>
+                        <button class="btn btn-glass-secondary text-start"><i class="bi bi-terminal me-2"></i>Server Console</button>
+                        <button class="btn btn-glass-secondary text-start"><i class="bi bi-file-earmark-text me-2"></i>Edit server-settings.json</button>
+                        <hr class="border-secondary my-2" />
+                        <button class="btn btn-glass-secondary text-start text-danger" @onclick="DeleteServer"><i class="bi bi-trash me-2"></i>Delete Server</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private ServerInstance? Instance;
+    private bool ShowSaveSuccess = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
+        if (Instance == null)
+        {
+            Navigation.NavigateTo("/");
+        }
+    }
+
+    private async Task SaveChanges()
+    {
+        if (Instance != null)
+        {
+            DbContext.ServerInstances.Update(Instance);
+            await DbContext.SaveChangesAsync();
+            
+            ShowSaveSuccess = true;
+            StateHasChanged();
+            
+            // Hide success message after 3 seconds
+            await Task.Delay(3000);
+            ShowSaveSuccess = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartServer()
+    {
+        if (Instance != null)
+        {
+            await InstanceManager.StartInstanceAsync(Instance);
+        }
+    }
+
+    private async Task StopServer()
+    {
+        await InstanceManager.StopInstanceAsync(Id);
+    }
+
+    private async Task DeleteServer()
+    {
+        if (Instance != null)
+        {
+            // First ensure it is stopped
+            await InstanceManager.StopInstanceAsync(Id);
+            
+            DbContext.ServerInstances.Remove(Instance);
+            await DbContext.SaveChangesAsync();
+            Navigation.NavigateTo("/");
+        }
+    }
+}

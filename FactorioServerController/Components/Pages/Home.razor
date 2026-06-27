@@ -1,7 +1,122 @@
-﻿@page "/"
+@page "/"
+@using FactorioLibrary.Data
+@using FactorioLibrary.Models
+@using FactorioLibrary.Services
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject InstanceManager InstanceManager
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Dashboard</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="container-fluid py-4">
+    <div class="row mb-4 align-items-center">
+        <div class="col">
+            <h1 class="display-5 text-accent mb-0"><i class="bi bi-cpu-fill me-2"></i>Factorio Instances</h1>
+            <p class="text-muted mt-2">Manage your servers and processes</p>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-glass" @onclick="CreateNewInstance"><i class="bi bi-plus-lg me-2"></i>New Instance</button>
+        </div>
+    </div>
 
-Welcome to your new app.
+    @if (Instances == null)
+    {
+        <div class="d-flex justify-content-center mt-5">
+            <div class="spinner-border text-accent" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (!Instances.Any())
+    {
+        <div class="glass-panel p-5 text-center mt-4">
+            <i class="bi bi-hdd-network display-1 text-muted mb-3 d-block"></i>
+            <h3>No instances found</h3>
+            <p class="text-muted mb-4">You don't have any Factorio servers configured yet.</p>
+            <button class="btn btn-glass" @onclick="CreateNewInstance">Create Your First Server</button>
+        </div>
+    }
+    else
+    {
+        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
+            @foreach (var instance in Instances)
+            {
+                bool isRunning = InstanceManager.IsRunning(instance.Id);
+                
+                <div class="col">
+                    <div class="glass-card h-100 d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <h4 class="mb-0 text-truncate">@instance.Name</h4>
+                            <div class="d-flex align-items-center">
+                                <span class="status-dot @(isRunning ? "running" : "stopped")" title="@(isRunning ? "Running" : "Stopped")"></span>
+                            </div>
+                        </div>
+                        
+                        <div class="text-muted small mb-4 flex-grow-1">
+                            <div class="mb-1"><i class="bi bi-hdd-fill me-2"></i>Port: <strong>@instance.Port</strong></div>
+                            <div class="mb-1"><i class="bi bi-terminal-fill me-2"></i>RCON: <strong>@instance.RconPort</strong></div>
+                            <div class="mb-1"><i class="bi bi-tag-fill me-2"></i>Version: <strong>@(string.IsNullOrEmpty(instance.AssignedVersion) ? "Latest" : instance.AssignedVersion)</strong></div>
+                        </div>
+
+                        <div class="d-flex gap-2 mt-auto">
+                            @if (isRunning)
+                            {
+                                <button class="btn btn-glass-secondary flex-grow-1 text-danger" @onclick="() => StopInstance(instance.Id)">
+                                    <i class="bi bi-stop-fill me-1"></i> Stop
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-glass flex-grow-1" @onclick="() => StartInstance(instance)">
+                                    <i class="bi bi-play-fill me-1"></i> Start
+                                </button>
+                            }
+                            <a href="/instance/@instance.Id" class="btn btn-glass-secondary"><i class="bi bi-gear-fill"></i></a>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<ServerInstance>? Instances;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInstances();
+    }
+
+    private async Task LoadInstances()
+    {
+        Instances = await DbContext.ServerInstances.ToListAsync();
+    }
+
+    private async Task StartInstance(ServerInstance instance)
+    {
+        await InstanceManager.StartInstanceAsync(instance);
+        StateHasChanged();
+    }
+
+    private async Task StopInstance(int instanceId)
+    {
+        await InstanceManager.StopInstanceAsync(instanceId);
+        StateHasChanged();
+    }
+
+    private async Task CreateNewInstance()
+    {
+        var newInstance = new ServerInstance
+        {
+            Name = $"Factorio Server #{Instances?.Count + 1 ?? 1}",
+            Port = 34197 + (Instances?.Count ?? 0),
+            RconPort = 27015 + (Instances?.Count ?? 0),
+            RconPassword = Guid.NewGuid().ToString("N").Substring(0, 8)
+        };
+
+        DbContext.ServerInstances.Add(newInstance);
+        await DbContext.SaveChangesAsync();
+        await LoadInstances();
+    }
+}
