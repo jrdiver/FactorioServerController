@@ -18,6 +18,22 @@
         "environmentVariables": {
           "ASPNETCORE_ENVIRONMENT": "Development"
         }
+      },
+      "Docker": {
+        "commandName": "Docker",
+        "launchBrowser": true,
+        "launchUrl": "{Scheme}://{ServiceHost}:{ServicePort}",
+        "environmentVariables": {
+          "ASPNETCORE_ENVIRONMENT": "Development",
+          "ConnectionStrings__DefaultConnection": "Data Source=/data/factorio_manager.db",
+          "DataProtection__KeyPath": "/data/keys",
+          "GlobalSettings__Path": "/data/settings.json",
+          "HOST_BASE_MOUNT_PATH": "C:\\Factorio\\instances"
+        },
+        "httpPort": 5056,
+        "httpsPort": 7179,
+        "useSSL": true,
+        "DockerfileRunArguments": "-v \"C:\\Factorio\\app-data:/data\" -v \"C:\\Factorio\\instances:/factorio\" -v \"//var/run/docker.sock:/var/run/docker.sock\""
       }
     }
   }

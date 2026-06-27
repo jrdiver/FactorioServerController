@@ -2,9 +2,13 @@
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
+@using FactorioLibrary
+@using FactorioLibrary.Objects
 @using Microsoft.EntityFrameworkCore
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
+@inject NavigationManager Navigation
+@inject FactorioWebApi WebApi
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -55,7 +59,7 @@
                         <div class="text-muted small mb-4 flex-grow-1">
                             <div class="mb-1"><i class="bi bi-hdd-fill me-2"></i>Port: <strong>@instance.Port</strong></div>
                             <div class="mb-1"><i class="bi bi-terminal-fill me-2"></i>RCON: <strong>@instance.RconPort</strong></div>
-                            <div class="mb-1"><i class="bi bi-tag-fill me-2"></i>Version: <strong>@(string.IsNullOrEmpty(instance.AssignedVersion) ? "Latest" : instance.AssignedVersion)</strong></div>
+                            <div class="mb-1"><i class="bi bi-tag-fill me-2"></i>Version: <strong>@GetVersionDisplayName(instance.AssignedVersion)</strong></div>
                         </div>
 
                         <div class="d-flex gap-2 mt-auto">
@@ -71,7 +75,10 @@
                                     <i class="bi bi-play-fill me-1"></i> Start
                                 </button>
                             }
-                            <a href="/instance/@instance.Id" class="btn btn-glass-secondary"><i class="bi bi-gear-fill"></i></a>
+                            <a href="/instance/@instance.Id/console" class="btn btn-glass-secondary text-accent" title="Server Console">
+                                <i class="bi bi-terminal-fill"></i>
+                            </a>
+                            <a href="/instance/@instance.Id" class="btn btn-glass-secondary" title="Settings"><i class="bi bi-gear-fill"></i></a>
                         </div>
                     </div>
                 </div>
@@ -82,6 +89,7 @@
 
 @code {
     private List<ServerInstance>? Instances;
+    private List<DockerTagInfo> AvailableVersions = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -91,6 +99,23 @@
     private async Task LoadInstances()
     {
         Instances = await DbContext.ServerInstances.ToListAsync();
+        try
+        {
+            AvailableVersions = await WebApi.GetDockerTagsAsync();
+        }
+        catch
+        {
+            AvailableVersions = new();
+        }
+    }
+
+    private string GetVersionDisplayName(string? tag)
+    {
+        if (string.IsNullOrEmpty(tag) || tag == "latest") return AvailableVersions.FirstOrDefault(v => v.Tag == "latest")?.DisplayName ?? "Latest";
+        if (tag == "stable") return AvailableVersions.FirstOrDefault(v => v.Tag == "stable")?.DisplayName ?? "Stable";
+        
+        var info = AvailableVersions.FirstOrDefault(v => v.Tag == tag);
+        return info?.DisplayName ?? tag;
     }
 
     private async Task StartInstance(ServerInstance instance)
@@ -117,6 +142,7 @@
 
         DbContext.ServerInstances.Add(newInstance);
         await DbContext.SaveChangesAsync();
-        await LoadInstances();
+        
+        Navigation.NavigateTo($"/instance/{newInstance.Id}");
     }
 }

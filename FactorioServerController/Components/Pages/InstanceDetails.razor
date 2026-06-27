@@ -2,10 +2,13 @@
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
+@using FactorioLibrary
+@using FactorioLibrary.Objects
 @using Microsoft.EntityFrameworkCore
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
 @inject NavigationManager Navigation
+@inject FactorioWebApi WebApi
 
 <PageTitle>Server Settings - @(Instance?.Name ?? "Loading...")</PageTitle>
 
@@ -65,7 +68,12 @@ else
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label text-muted">Factorio Version</label>
-                                <InputText @bind-Value="Instance.AssignedVersion" class="form-control bg-transparent text-white border-secondary" placeholder="e.g. 1.1.107 or Latest" />
+                                <InputSelect @bind-Value="Instance.AssignedVersion" class="form-select bg-transparent text-white border-secondary">
+                                    @foreach(var v in AvailableVersions)
+                                    {
+                                        <option value="@v.Tag" class="text-dark">@v.DisplayName</option>
+                                    }
+                                </InputSelect>
                                 <ValidationMessage For="@(() => Instance.AssignedVersion)" />
                             </div>
                         </div>
@@ -95,6 +103,100 @@ else
                         </div>
                     </EditForm>
                 </div>
+
+                <div class="glass-card mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h4 class="mb-0"><i class="bi bi-floppy me-2"></i>Saves Management</h4>
+                        <div>
+                            <InputFile OnChange="UploadSaveFile" class="d-none" id="saveUpload" accept=".zip" />
+                            <button class="btn btn-glass-secondary" type="button" onclick="document.getElementById('saveUpload').click()" disabled="@IsUploading">
+                                @if (IsUploading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    <span>Uploading...</span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-upload me-2"></i><span>Upload Save</span>
+                                }
+                            </button>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(UploadError))
+                    {
+                        <div class="alert alert-danger">@UploadError</div>
+                    }
+
+                    @if (SaveFiles == null)
+                    {
+                        <div class="text-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span> Loading saves...</div>
+                    }
+                    else if (!SaveFiles.Any())
+                    {
+                        <div class="text-center text-muted my-4">
+                            <i class="bi bi-folder2-open display-4 mb-3 d-block"></i>
+                            No saves found for this instance.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover table-borderless align-middle mb-0">
+                                <thead class="border-bottom border-secondary">
+                                    <tr>
+                                        <th class="text-muted">Filename</th>
+                                        <th class="text-muted">Last Modified</th>
+                                        <th class="text-muted text-end">Size</th>
+                                        <th class="text-end">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var save in SaveFiles)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <i class="bi bi-file-zip text-accent me-2"></i>
+                                                <span class="text-white">@save.Name</span>
+                                            </td>
+                                            <td class="text-muted">
+                                                @save.LastModified.ToString("g")
+                                                @if (string.IsNullOrEmpty(Instance?.ActiveSaveName) && save == SaveFiles.First())
+                                                {
+                                                    <span class="badge bg-secondary ms-2" title="Will auto-load because it is the newest save">Auto-Active</span>
+                                                }
+                                            </td>
+                                            <td class="text-muted text-end">@FormatBytes(save.SizeBytes)</td>
+                                            <td class="text-end">
+                                                @if (Instance?.ActiveSaveName == save.Name)
+                                                {
+                                                    <button class="btn btn-sm btn-glass-secondary text-success me-2" @onclick="ClearActiveSave" title="Currently Active (Click to clear)">
+                                                        <i class="bi bi-star-fill"></i> Active
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn btn-sm btn-glass-secondary me-2" @onclick="() => SetActiveSave(save.Name)" title="Set as Active Save">
+                                                        <i class="bi bi-star"></i> Set Active
+                                                    </button>
+                                                }
+                                                <a href="/api/instances/@Id/saves/@Uri.EscapeDataString(save.Name)" download class="btn btn-sm btn-glass-secondary me-2" title="Download">
+                                                    <i class="bi bi-download"></i>
+                                                </a>
+                                                <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteSaveFile(save.Name)" title="Delete">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="text-muted small mt-3">
+                            <i class="bi bi-info-circle me-1"></i> The Factorio server automatically loads the most recently modified save file when it starts.
+                        </div>
+                    }
+                </div>
             </div>
             
             <div class="col-lg-4">
@@ -102,7 +204,7 @@ else
                     <h4 class="mb-4"><i class="bi bi-info-circle me-2"></i>Quick Actions</h4>
                     <div class="d-grid gap-2">
                         <button class="btn btn-glass-secondary text-start"><i class="bi bi-puzzle me-2"></i>Manage Mods</button>
-                        <button class="btn btn-glass-secondary text-start"><i class="bi bi-terminal me-2"></i>Server Console</button>
+                        <a href="/instance/@Id/console" class="btn btn-glass-secondary text-start"><i class="bi bi-terminal me-2"></i>Server Console</a>
                         <button class="btn btn-glass-secondary text-start"><i class="bi bi-file-earmark-text me-2"></i>Edit server-settings.json</button>
                         <hr class="border-secondary my-2" />
                         <button class="btn btn-glass-secondary text-start text-danger" @onclick="DeleteServer"><i class="bi bi-trash me-2"></i>Delete Server</button>
@@ -118,7 +220,18 @@ else
     public int Id { get; set; }
 
     private ServerInstance? Instance;
+    private List<DockerTagInfo> AvailableVersions = new();
     private bool ShowSaveSuccess = false;
+    private List<SaveFileInfo>? SaveFiles;
+    private bool IsUploading = false;
+    private string? UploadError;
+
+    private class SaveFileInfo
+    {
+        public string Name { get; set; } = "";
+        public DateTime LastModified { get; set; }
+        public long SizeBytes { get; set; }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -126,6 +239,24 @@ else
         if (Instance == null)
         {
             Navigation.NavigateTo("/");
+            return;
+        }
+
+        LoadSaveFiles();
+
+        try
+        {
+            AvailableVersions = await WebApi.GetDockerTagsAsync();
+        }
+        catch
+        {
+            // Fallback if API fails
+            AvailableVersions = new List<DockerTagInfo> { 
+                new("latest", "latest"), 
+                new("stable", "stable"), 
+                new("2.1", "2.1"), 
+                new("2.0", "2.0") 
+            };
         }
     }
 
@@ -169,6 +300,118 @@ else
             DbContext.ServerInstances.Remove(Instance);
             await DbContext.SaveChangesAsync();
             Navigation.NavigateTo("/");
+        }
+    }
+
+    private void LoadSaveFiles()
+    {
+        try
+        {
+            var savesDir = InstanceManager.GetSavesDirectory(Id);
+            if (!Directory.Exists(savesDir))
+            {
+                Directory.CreateDirectory(savesDir);
+            }
+
+            var dirInfo = new DirectoryInfo(savesDir);
+            SaveFiles = dirInfo.GetFiles("*.zip")
+                .Select(f => new SaveFileInfo
+                {
+                    Name = f.Name,
+                    LastModified = f.LastWriteTime,
+                    SizeBytes = f.Length
+                })
+                .OrderByDescending(s => s.LastModified)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            SaveFiles = new List<SaveFileInfo>();
+        }
+    }
+
+    private async Task UploadSaveFile(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+        if (!file.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            UploadError = "Only .zip save files are allowed.";
+            return;
+        }
+
+        IsUploading = true;
+        UploadError = null;
+        StateHasChanged();
+
+        try
+        {
+            var savesDir = InstanceManager.GetSavesDirectory(Id);
+            if (!Directory.Exists(savesDir)) Directory.CreateDirectory(savesDir);
+
+            var path = Path.Combine(savesDir, file.Name);
+
+            // Allow up to 2GB max file size
+            await using var stream = file.OpenReadStream(2147483648);
+            await using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+            await stream.CopyToAsync(fs);
+
+            LoadSaveFiles(); // Refresh list
+        }
+        catch (Exception ex)
+        {
+            UploadError = $"Upload failed: {ex.Message}";
+        }
+        finally
+        {
+            IsUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void DeleteSaveFile(string filename)
+    {
+        try
+        {
+            var savesDir = InstanceManager.GetSavesDirectory(Id);
+            var path = Path.Combine(savesDir, filename);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                LoadSaveFiles();
+            }
+        }
+        catch { }
+    }
+
+    private string FormatBytes(long bytes)
+    {
+        string[] suffixes = { "B", "KB", "MB", "GB" };
+        int counter = 0;
+        decimal number = (decimal)bytes;
+        while (Math.Round(number / 1024) >= 1)
+        {
+            number = number / 1024;
+            counter++;
+        }
+        return string.Format("{0:n1} {1}", number, suffixes[counter]);
+    }
+
+    private async Task SetActiveSave(string filename)
+    {
+        if (Instance != null)
+        {
+            Instance.ActiveSaveName = filename;
+            await SaveChanges();
+        }
+    }
+
+    private async Task ClearActiveSave()
+    {
+        if (Instance != null)
+        {
+            Instance.ActiveSaveName = null;
+            await SaveChanges();
         }
     }
 }

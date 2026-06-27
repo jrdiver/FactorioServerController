@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 using FactorioLibrary.Internal;
 
 namespace FactorioLibrary.Objects;
@@ -101,4 +101,6 @@ public class FactorioRelease
     public bool IsHeadless { get; set; }
     public bool IsStable { get; set; }
 }
+
+public record DockerTagInfo(string Tag, string DisplayName);
 

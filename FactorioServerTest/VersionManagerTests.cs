@@ -51,8 +51,9 @@ public class VersionManagerTests
         mockHandler.ResponseToReturn.Content = new StringContent("fake binary data");
         var httpClient = new HttpClient(mockHandler);
         
+        var settingsService = new GlobalSettingsService("test_settings.json");
         var credentials = new FactorioCredentials { Username = "user", Token = "token" };
-        var webApi = new FactorioWebApi(credentials);
+        var webApi = new FactorioWebApi(credentials, settingsService);
         var manager = new VersionManager(webApi, _tempDir, httpClient);
 
         var release = new FactorioRelease 

@@ -3,7 +3,7 @@
     --bg-card: rgba(30, 41, 59, 0.7);
     --border-color: rgba(255, 255, 255, 0.1);
     --text-main: #f8fafc;
-    --text-muted: #94a3b8;
+    --text-muted: #cbd5e1; /* Made brighter for visibility on dark bg */
     --accent: #f97316; /* Factorio Orange */
     --accent-glow: rgba(249, 115, 22, 0.4);
     --success: #10b981;
@@ -42,7 +42,6 @@ body {
 }
 
 .glass-card:hover {
-    transform: translateY(-5px);
     box-shadow: 0 10px 25px var(--accent-glow);
     border-color: rgba(249, 115, 22, 0.5);
 }
@@ -121,6 +120,8 @@ h1, h2, h3, h4, h5, h6 {
 
 main {
     flex: 1;
+    min-width: 0;
+    overflow-x: hidden;
 }
 
 /* Status Indicators */
@@ -148,4 +149,26 @@ main {
 
 .text-accent {
     color: var(--accent) !important;
+}
+
+/* Force override bootstrap text-muted */
+.text-muted {
+    color: var(--text-muted) !important;
+}
+
+/* Form Controls */
+.form-control {
+    background-color: rgba(15, 23, 42, 0.6) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+.form-control:focus {
+    background-color: rgba(15, 23, 42, 0.9) !important;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 0.25rem rgba(249, 115, 22, 0.25) !important;
+}
+
+.form-control::placeholder {
+    color: rgba(255, 255, 255, 0.3) !important;
 }

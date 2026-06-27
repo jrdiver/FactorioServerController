@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.DataProtection;
 using FactorioLibrary;
 using FactorioLibrary.Data;
 using FactorioLibrary.Services;
@@ -10,6 +11,14 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=factorio_manager.db"));
+
+var dataProtectionPath = builder.Configuration["DataProtection:KeyPath"];
+if (!string.IsNullOrEmpty(dataProtectionPath))
+{
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
+        .SetApplicationName("FactorioServerController");
+}
 
 builder.Services.AddAuthentication(options =>
     {
@@ -24,15 +33,32 @@ builder.Services.AddIdentityCore<IdentityUser>(options => options.SignIn.Require
     .AddDefaultTokenProviders();
 
 // Register Factorio Core Services
-builder.Services.AddSingleton<FactorioWebApi>(sp => new FactorioWebApi(new FactorioLibrary.Objects.FactorioCredentials()));
+var settingsPath = builder.Configuration["GlobalSettings:Path"] ?? "settings.json";
+builder.Services.AddSingleton<GlobalSettingsService>(sp => new GlobalSettingsService(settingsPath));
+builder.Services.AddSingleton<FactorioWebApi>(sp => new FactorioWebApi(new FactorioLibrary.Objects.FactorioCredentials(), sp.GetRequiredService<GlobalSettingsService>()));
 builder.Services.AddSingleton<VersionManager>();
 builder.Services.AddSingleton<ModManager>();
 builder.Services.AddSingleton<InstanceManager>();
 
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents(options =>
+    {
+        // Allow up to 2GB uploads via SignalR for extremely large Factorio save files
+        options.RootComponents.MaxJSRootComponents = 100;
+    })
+    .AddHubOptions(options =>
+    {
+        options.MaximumReceiveMessageSize = 2147483648; // 2GB
+    });
 
 WebApplication app = builder.Build();
+
+// Automatically apply database migrations on startup so new DBs get tables created
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    dbContext.Database.Migrate();
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -52,5 +78,19 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// Minimal API endpoint for downloading save files directly
+app.MapGet("/api/instances/{id:int}/saves/{filename}", (int id, string filename, InstanceManager manager) => 
+{
+    // Sanitize filename to prevent directory traversal
+    var safeFilename = Path.GetFileName(filename);
+    var savesDir = manager.GetSavesDirectory(id);
+    var filePath = Path.Combine(savesDir, safeFilename);
+    
+    if (!System.IO.File.Exists(filePath)) 
+        return Results.NotFound();
+        
+    return Results.File(filePath, "application/zip", safeFilename);
+});
 
 app.Run();

@@ -31,6 +31,29 @@ public class InstanceManager
         // This is the path ON THE HOST OS where we store all Factorio data
         _hostBaseMountPath = configuration.GetValue<string>("HOST_BASE_MOUNT_PATH") 
             ?? (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "C:\\FactorioServers" : "/mnt/user/appdata/factorio_manager/servers");
+            
+        // Auto-discover any already running containers
+        _ = InitializeRunningContainersAsync();
+    }
+    
+    private async Task InitializeRunningContainersAsync()
+    {
+        try
+        {
+            var containers = await _dockerClient.Containers.ListContainersAsync(new ContainersListParameters { All = false });
+            foreach (var c in containers)
+            {
+                if (c.Names != null && c.Names.Any(n => n.StartsWith("/factorio_server_")))
+                {
+                    string name = c.Names.First(n => n.StartsWith("/factorio_server_"));
+                    if (int.TryParse(name.Replace("/factorio_server_", ""), out int id))
+                    {
+                        _runningContainers.TryAdd(id, c.ID);
+                    }
+                }
+            }
+        }
+        catch { }
     }
 
     public async Task<bool> StartInstanceAsync(ServerInstance instance)
@@ -74,13 +97,47 @@ public class InstanceManager
             // 3. Create host directory path for this specific instance
             string instanceHostPath = $"{_hostBaseMountPath.TrimEnd('/', '\\')}/{instance.Id}";
             
-            // Note: Docker will automatically create the host directory if it doesn't exist when the volume is mounted
+            // Note: Docker will automatically create the host directory if it doesn't exist when the volume is mounted,
+            // but we MUST write the rconpw file before starting because factoriotools/factorio does not use env vars for it!
+            try
+            {
+                string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
+                    ? $"/factorio/{instance.Id}" 
+                    : instanceHostPath;
+                    
+                string configPath = System.IO.Path.Combine(localDataPath, "config");
+                System.IO.Directory.CreateDirectory(configPath);
+                await System.IO.File.WriteAllTextAsync(System.IO.Path.Combine(configPath, "rconpw"), instance.RconPassword);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Could not pre-create rconpw file: {ex.Message}");
+            }
 
-            // 4. Create the container
+            // 4. Configure save file loading behavior
+            var loadLatest = string.IsNullOrEmpty(instance.ActiveSaveName) ? "true" : "false";
+            var envVars = new List<string>
+            {
+                $"PORT={instance.Port}",
+                $"RCON_PORT={instance.RconPort}",
+                $"RCON_PASSWORD={instance.RconPassword}",
+                $"LOAD_LATEST_SAVE={loadLatest}"
+            };
+
+            if (!string.IsNullOrEmpty(instance.ActiveSaveName))
+            {
+                // Factorio container expects SAVE_NAME without the .zip extension
+                var saveNameWithoutExtension = instance.ActiveSaveName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) 
+                    ? instance.ActiveSaveName.Substring(0, instance.ActiveSaveName.Length - 4) 
+                    : instance.ActiveSaveName;
+                envVars.Add($"SAVE_NAME={saveNameWithoutExtension}");
+            }
+
             var response = await _dockerClient.Containers.CreateContainerAsync(new CreateContainerParameters
             {
                 Image = image,
                 Name = containerName,
+                Env = envVars,
                 HostConfig = new HostConfig
                 {
                     PortBindings = new Dictionary<string, IList<PortBinding>>
@@ -92,10 +149,6 @@ public class InstanceManager
                     {
                         $"{instanceHostPath}:/factorio"
                     }
-                },
-                Env = new List<string>
-                {
-                    $"RCON_PASSWORD={instance.RconPassword}"
                 }
             });
 
@@ -141,5 +194,53 @@ public class InstanceManager
         // Simple in-memory check for UI responsiveness. 
         // A more robust implementation would poll the Docker API, but this is fine for now.
         return _runningContainers.ContainsKey(instanceId);
+    }
+
+    public async Task<MultiplexedStream?> GetLogStreamAsync(int instanceId, CancellationToken cancellationToken = default)
+    {
+        if (_runningContainers.TryGetValue(instanceId, out string? containerId))
+        {
+            try
+            {
+                var parameters = new ContainerLogsParameters
+                {
+                    ShowStdout = true,
+                    ShowStderr = true,
+                    Follow = true,
+                    Tail = "100" // Get last 100 lines + follow new ones
+                };
+                
+                return await _dockerClient.Containers.GetContainerLogsAsync(containerId, false, parameters, cancellationToken);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    public async Task<string?> GetContainerIpAddressAsync(int instanceId)
+    {
+        if (_runningContainers.TryGetValue(instanceId, out string? containerId))
+        {
+            try
+            {
+                var inspect = await _dockerClient.Containers.InspectContainerAsync(containerId);
+                return inspect.NetworkSettings.IPAddress;
+            }
+            catch { }
+        }
+        return null;
+    }
+
+    public string GetSavesDirectory(int instanceId)
+    {
+        string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
+        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
+            ? $"/factorio/{instanceId}" 
+            : instanceHostPath;
+            
+        return Path.Combine(localDataPath, "saves");
     }
 }

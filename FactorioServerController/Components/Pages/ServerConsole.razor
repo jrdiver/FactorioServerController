@@ -1,0 +1,338 @@
+@page "/instance/{Id:int}/console"
+@using FactorioLibrary.Data
+@using FactorioLibrary.Models
+@using FactorioLibrary.Services
+@using FactorioLibrary
+@using Microsoft.EntityFrameworkCore
+@using System.Text
+@using Docker.DotNet
+@implements IAsyncDisposable
+@inject AppDbContext DbContext
+@inject InstanceManager InstanceManager
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Server Console - @(Instance?.Name ?? "Loading...")</PageTitle>
+
+@if (Instance == null)
+{
+    <div class="d-flex justify-content-center mt-5">
+        <div class="spinner-border text-accent" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else
+{
+    <script>
+        window.autoScrollConsole = () => {
+            var el = document.getElementById('console-output');
+            if(el) {
+                // If they are within 150px of the bottom, snap to bottom. Otherwise leave them alone.
+                var isAtBottom = el.scrollHeight - el.clientHeight <= el.scrollTop + 150;
+                if(isAtBottom) {
+                    el.scrollTop = el.scrollHeight;
+                }
+            }
+        }
+        window.forceScrollConsole = () => {
+            var el = document.getElementById('console-output');
+            if(el) { el.scrollTop = el.scrollHeight; }
+        }
+    </script>
+
+    <div class="container-fluid py-4 d-flex flex-column" style="height: calc(100vh - 80px); max-height: calc(100vh - 80px); max-width: 100%; overflow: hidden;">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="mb-1 text-white">
+                    <i class="bi bi-terminal-fill me-2 text-accent"></i>
+                    @Instance?.Name Console
+                </h2>
+                <div class="text-muted">Live server logs and RCON interface</div>
+            </div>
+            <div class="d-flex gap-2">
+                <div class="form-check form-switch mt-2 me-3">
+                    <input class="form-check-input" type="checkbox" id="wordWrapToggle" @bind="WrapLogs">
+                    <label class="form-check-label text-muted" for="wordWrapToggle">Word Wrap</label>
+                </div>
+                
+                <a href="/instance/@Instance?.Id" class="btn btn-glass-secondary">
+                    <i class="bi bi-arrow-left me-2"></i>Back to Details
+                </a>
+            </div>
+        </div>
+
+        <div class="glass-card flex-grow-1 d-flex flex-column overflow-hidden p-0 border border-secondary" style="min-height: 0; min-width: 0; width: 100%;">
+            <div id="console-output" class="flex-grow-1 p-3" style="overflow-y: scroll; overflow-x: auto; min-height: 0; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.9rem; background-color: #0f111a;">
+                @if (!InstanceManager.IsRunning(Instance.Id))
+                {
+                    <div class="text-danger">Server is currently offline. Start the server to view live console logs.</div>
+                }
+                else
+                {
+                    @foreach (var log in Logs)
+                    {
+                        <div style="white-space: @(WrapLogs ? "pre-wrap" : "pre"); word-wrap: @(WrapLogs ? "break-word" : "normal"); color: #d7d7d7;">@log</div>
+                    }
+                }
+            </div>
+            
+            <div class="bg-dark p-3 border-top border-secondary">
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/time"))" disabled="@(!InstanceManager.IsRunning(Instance.Id))">
+                        <i class="bi bi-clock me-1"></i> Time
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/players"))" disabled="@(!InstanceManager.IsRunning(Instance.Id))">
+                        <i class="bi bi-people me-1"></i> Players
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/server-save"))" disabled="@(!InstanceManager.IsRunning(Instance.Id))">
+                        <i class="bi bi-save me-1"></i> Save Server
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/admins"))" disabled="@(!InstanceManager.IsRunning(Instance.Id))">
+                        <i class="bi bi-shield-lock me-1"></i> Admins
+                    </button>
+                </div>
+                <form @onsubmit="SendRconCommand" class="d-flex gap-2">
+                    <input type="text" @bind="RconInput" @bind:event="oninput" 
+                           class="form-control bg-transparent text-white border-secondary flex-grow-1" 
+                           placeholder="Enter RCON command (e.g. time, players, save)..." 
+                           disabled="@(!InstanceManager.IsRunning(Instance.Id))" />
+                           
+                    <button type="submit" class="btn btn-accent" disabled="@(!InstanceManager.IsRunning(Instance.Id) || string.IsNullOrWhiteSpace(RconInput))">
+                        <span><i class="bi bi-send-fill me-2"></i>Send</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private ServerInstance? Instance;
+    private List<string> Logs = new();
+    private string RconInput = "";
+    private bool IsSending = false;
+    private bool WrapLogs = false; // Default to no wrap as requested
+    
+    private MultiplexedStream? _logStream;
+    private CancellationTokenSource _cts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
+        if (Instance == null)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        if (InstanceManager.IsRunning(Instance.Id))
+        {
+            await StartLogStreamAsync();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try 
+            {
+                await JSRuntime.InvokeVoidAsync("forceScrollConsole");
+            }
+            catch { }
+        }
+    }
+
+    private async Task StartLogStreamAsync()
+    {
+        _logStream = await InstanceManager.GetLogStreamAsync(Instance!.Id, _cts.Token);
+        
+        if (_logStream != null)
+        {
+            // Start reading logs in the background without awaiting
+            _ = ReadLogsLoopAsync();
+        }
+    }
+
+    private async Task ReadLogsLoopAsync()
+    {
+        var buffer = new byte[81920];
+        StringBuilder lineBuffer = new StringBuilder();
+        
+        try
+        {
+            while (!_cts.IsCancellationRequested && _logStream != null)
+            {
+                var result = await _logStream.ReadOutputAsync(buffer, 0, buffer.Length, _cts.Token);
+                
+                if (result.EOF) break;
+
+                if (result.Count > 0)
+                {
+                    string text = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    
+                    // Buffer the text and split only when we have complete lines
+                    lineBuffer.Append(text);
+                    string currentBuffer = lineBuffer.ToString();
+                    
+                    int newlineIndex;
+                    bool updated = false;
+                    
+                    while ((newlineIndex = currentBuffer.IndexOf('\n')) >= 0)
+                    {
+                        string line = currentBuffer.Substring(0, newlineIndex).TrimEnd('\r');
+                        Logs.Add(line);
+                        if (Logs.Count > 500) Logs.RemoveAt(0);
+                        
+                        currentBuffer = currentBuffer.Substring(newlineIndex + 1);
+                        updated = true;
+                    }
+                    
+                    lineBuffer.Clear();
+                    lineBuffer.Append(currentBuffer);
+
+                    if (updated)
+                    {
+                        await InvokeAsync(StateHasChanged);
+                        
+                        // Scroll to bottom using JSInterop if they are already near the bottom
+                        try 
+                        {
+                            await JSRuntime.InvokeVoidAsync("autoScrollConsole");
+                        }
+                        catch { /* ignore JS errors if disconnected */ }
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected
+        }
+        catch (Exception ex)
+        {
+            Logs.Add($"[Error reading logs: {ex.Message}]");
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SendPresetCommand(string cmd)
+    {
+        RconInput = cmd;
+        await SendRconCommand();
+    }
+
+    private async Task SendRconCommand()
+    {
+        if (string.IsNullOrWhiteSpace(RconInput) || Instance == null || !InstanceManager.IsRunning(Instance.Id))
+            return;
+
+        string command = RconInput;
+        RconInput = ""; // Clear input immediately
+        await InvokeAsync(StateHasChanged);
+        
+        try
+        {
+            // Connect to the Factorio RCON port via the HOST's mapped port
+            // Note: Since the Controller maps the factorio container's port to the host port natively,
+            // we can just connect to the host port locally. If the controller is running inside docker, 
+            // the docker-compose network allows internal host access if needed, but wait: 
+            // factoriotools/factorio default rcon port inside container is 27015.
+            // If the controller and factorio server are on different networks, we use the host IP.
+            // Wait, actually the easiest way is to connect to the Factorio container's network directly?
+            // "factorio_server_{Instance.Id}" is the container name. Docker compose usually links them by container name,
+            // but the Controller spins them up via the daemon, so they are placed on the default "bridge" network!
+            // Wait, if the Controller is running in docker-compose, it's on a custom network.
+            // A Factorio server spun up by the controller uses the default bridge network unless specified.
+            // However, the Controller mapped the RconPort to the Host! So we can use host.docker.internal or 172.17.0.1 (Docker Host IP)
+            // Or if we run native on windows, "127.0.0.1". 
+            // A foolproof way is to get the Docker Host IP or just use the local IP.
+            string hostAddress = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? "host.docker.internal" : "127.0.0.1";
+            
+            // On Linux, host.docker.internal might not resolve unless --add-host is used. 
+            // Another approach is connecting to the container's IP directly from Docker API, but networks might differ.
+            // Let's use 127.0.0.1 first if native, and we will try to resolve the container IP.
+            
+            Logs.Add($"> {command}"); // Echo locally
+            await InvokeAsync(StateHasChanged);
+
+            bool connected = false;
+            FactorioRcon? rcon = null;
+            
+            string lastError = "Unknown error";
+            
+            // Attempt 1: Try connecting directly to the container's internal IP on port 27015
+            string? containerIp = await InstanceManager.GetContainerIpAddressAsync(Instance.Id);
+            if (!string.IsNullOrEmpty(containerIp))
+            {
+                rcon = new FactorioRcon(containerIp, 27015, Instance.RconPassword);
+                try 
+                {
+                    connected = await rcon.ConnectAsync();
+                }
+                catch (Exception ex) { lastError = $"Internal IP {containerIp}: {ex.Message}"; }
+            }
+
+            // Attempt 2: If running natively on Windows, internal IPs might not route. Fallback to host port mapping.
+            // If the Controller itself is in Docker, 127.0.0.1 won't work, so we must use the Docker Host Gateway (host.docker.internal).
+            if (!connected)
+            {
+                rcon?.Dispose();
+                string fallbackIp = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? "host.docker.internal" : "127.0.0.1";
+                rcon = new FactorioRcon(fallbackIp, Instance.RconPort, Instance.RconPassword);
+                try
+                {
+                    connected = await rcon.ConnectAsync();
+                }
+                catch (Exception ex) { lastError = $"{fallbackIp}:{Instance.RconPort}: {ex.Message}"; }
+            }
+            
+            if (connected && rcon != null)
+            {
+                string response = await rcon.SendCommandAsync(command);
+                if (!string.IsNullOrWhiteSpace(response))
+                {
+                    Logs.Add($"[RCON] {response.Trim()}");
+                }
+                else
+                {
+                    Logs.Add($"[RCON] (Command executed successfully, no output returned)");
+                }
+            }
+            else
+            {
+                Logs.Add($"[RCON Error] Could not connect to RCON port. Details: {lastError}");
+            }
+            
+            rcon?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Logs.Add($"[RCON Exception] {ex.Message}");
+        }
+        finally
+        {
+            await InvokeAsync(StateHasChanged);
+            
+            try 
+            {
+                await JSRuntime.InvokeVoidAsync("forceScrollConsole");
+            }
+            catch { }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts.Cancel();
+        if (_logStream != null)
+        {
+            _logStream.Dispose();
+        }
+        _cts.Dispose();
+    }
+}

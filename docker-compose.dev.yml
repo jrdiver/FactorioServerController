@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  factorio-controller:
+    environment:
+      # Pass the absolute host mount path for local development
+      - HOST_BASE_MOUNT_PATH=C:/Factorio/instances
+    volumes:
+      # Override the relative paths to map directly to C:\Factorio
+      - C:/Factorio/app-data:/data
+      - C:/Factorio/instances:/factorio

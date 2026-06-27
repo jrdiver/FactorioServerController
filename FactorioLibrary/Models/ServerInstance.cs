@@ -18,6 +18,8 @@ public class ServerInstance
     [MaxLength(100)]
     public string RconPassword { get; set; } = string.Empty;
 
+    public string? ActiveSaveName { get; set; }
+
     [MaxLength(50)]
     public string? AssignedVersion { get; set; }
 

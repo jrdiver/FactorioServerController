@@ -1,4 +1,4 @@
-﻿using FactorioLibrary;
+using FactorioLibrary;
 using FactorioLibrary.Objects;
 
 namespace FactorioServerTest;
@@ -6,7 +6,7 @@ namespace FactorioServerTest;
 [TestClass]
 public sealed class Test1
 {
-    private static readonly FactorioWebApi WebApi = new(new("jrdiver", "f357fe961a77af8545be75be26e17b"));
+    private static readonly FactorioWebApi WebApi = new(new("jrdiver", "f357fe961a77af8545be75be26e17b"), new FactorioLibrary.Services.GlobalSettingsService("test_settings.json"));
 
     [TestMethod]
     public void RconConnection()
