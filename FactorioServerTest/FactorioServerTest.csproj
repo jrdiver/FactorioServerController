@@ -8,4 +8,8 @@
     <UseVSTest>true</UseVSTest>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\FactorioLibrary\FactorioLibrary.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="FactorioSharp.Rcon" Version="0.3.16" />
+  </ItemGroup>
+
 </Project>
