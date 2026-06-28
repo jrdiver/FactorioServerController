@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <UserSecretsId>c1baddf1-ebba-45a1-a526-5ec3a91d4448</UserSecretsId>
+    <ContainerRepository>jrdiver/factorioservercontroller</ContainerRepository>
+    <DockerfileContext>..\.</DockerfileContext>
   </PropertyGroup>
 
   <ItemGroup>

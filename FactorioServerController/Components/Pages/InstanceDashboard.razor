@@ -1,0 +1,136 @@
+@using FactorioLibrary.Models
+@using FactorioLibrary.Services
+@using FactorioLibrary.Data
+@using Microsoft.EntityFrameworkCore
+@inject InstanceManager InstanceManager
+@inject AppDbContext DbContext
+@implements IDisposable
+
+<div class="glass-card mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-activity me-2"></i>Live Dashboard</h4>
+        @if (Stats?.IsOnline == true)
+        {
+            <span class="badge bg-success">Online</span>
+        }
+        else
+        {
+            <span class="badge bg-danger">Offline</span>
+        }
+    </div>
+
+    @if (Instance == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-3 text-muted">Loading server data...</p>
+        </div>
+    }
+    else if (Stats == null || !Stats.IsOnline)
+    {
+        <div class="alert alert-secondary bg-dark border-secondary">
+            <i class="bi bi-info-circle me-2"></i> Dashboard is only available while the server is running.
+        </div>
+    }
+    else
+    {
+        <div class="row g-4 mb-4">
+            <!-- CPU Gauge -->
+            <div class="col-md-6">
+                <div class="p-3 rounded bg-dark border border-secondary text-center h-100">
+                    <h6 class="text-muted mb-3"><i class="bi bi-cpu me-2"></i>CPU Usage</h6>
+                    <h2 class="text-white mb-3">@Stats.CpuPercentage.ToString("F1")%</h2>
+                    <div class="progress bg-secondary" style="height: 10px;">
+                        <div class="progress-bar @(Stats.CpuPercentage > 80 ? "bg-danger" : "bg-primary")" role="progressbar" style="width: @(Math.Min(100, Stats.CpuPercentage))%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RAM Gauge -->
+            <div class="col-md-6">
+                <div class="p-3 rounded bg-dark border border-secondary text-center h-100">
+                    <h6 class="text-muted mb-3"><i class="bi bi-memory me-2"></i>Memory Usage</h6>
+                    <h2 class="text-white mb-3">@Stats.RamUsageMb.ToString("F0") MB</h2>
+                    <div class="progress bg-secondary" style="height: 10px;">
+                        <div class="progress-bar @(Stats.RamUsageMb > (Stats.RamLimitMb * 0.8) ? "bg-danger" : "bg-info")" role="progressbar" 
+                             style="width: @(Stats.RamLimitMb > 0 ? Math.Min(100, (Stats.RamUsageMb / Stats.RamLimitMb) * 100) : 0)%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Online Players -->
+        <div class="p-4 rounded bg-dark border border-secondary">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="m-0"><i class="bi bi-people-fill me-2"></i>Online Players (@Stats.OnlinePlayers.Count)</h5>
+            </div>
+            
+            @if (Stats.OnlinePlayers.Any())
+            {
+                <ul class="list-group list-group-flush bg-transparent">
+                    @foreach (var player in Stats.OnlinePlayers)
+                    {
+                        <li class="list-group-item bg-transparent text-white border-secondary px-0">
+                            <i class="bi bi-person me-2 text-primary"></i>@player
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="text-muted m-0 fst-italic">No players currently connected.</p>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private ServerInstance? Instance;
+    private ServerStats? Stats;
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource _cts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
+        
+        if (Instance != null)
+        {
+            // Initial fetch
+            Stats = await InstanceManager.GetLiveStatsAsync(Instance);
+            
+            // Start polling loop
+            _timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+            _ = PollStatsAsync();
+        }
+    }
+
+    private async Task PollStatsAsync()
+    {
+        try
+        {
+            while (await _timer!.WaitForNextTickAsync(_cts.Token))
+            {
+                if (Instance != null)
+                {
+                    Stats = await InstanceManager.GetLiveStatsAsync(Instance);
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Disposed
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _timer?.Dispose();
+    }
+}

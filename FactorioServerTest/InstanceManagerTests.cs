@@ -24,7 +24,7 @@ public class InstanceManagerTests
     {
         // Arrange
         var config = CreateConfig("/custom/host/path");
-        var manager = new InstanceManager(config);
+        var manager = new InstanceManager(config, new RconService());
 
         // Act
         var result = manager.GetSavesDirectory(42);
@@ -39,7 +39,7 @@ public class InstanceManagerTests
     {
         // Arrange
         var config = CreateConfig("/custom/host/path");
-        var manager = new InstanceManager(config);
+        var manager = new InstanceManager(config, new RconService());
 
         // Act
         var result = manager.GetModsDirectory(99);
@@ -54,7 +54,7 @@ public class InstanceManagerTests
     {
         // Arrange
         var config = CreateConfig("/custom/host/path");
-        var manager = new InstanceManager(config);
+        var manager = new InstanceManager(config, new RconService());
 
         // Act
         var isRunning = manager.IsRunning(9999);

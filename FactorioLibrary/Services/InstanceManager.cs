@@ -15,12 +15,14 @@ public class InstanceManager
 {
     private readonly DockerClient _dockerClient;
     private readonly string _hostBaseMountPath;
+    private readonly RconService _rconService;
     
     // Maps instance ID to Docker Container ID
     private readonly ConcurrentDictionary<int, string> _runningContainers = new();
 
-    public InstanceManager(IConfiguration configuration)
+    public InstanceManager(IConfiguration configuration, RconService rconService)
     {
+        _rconService = rconService;
         // Use named pipes on Windows, unix socket on Linux/Unraid
         var dockerUri = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
             ? new Uri("npipe://./pipe/docker_engine")
@@ -380,6 +382,75 @@ public class InstanceManager
         {
             Console.WriteLine($"Error resetting configs: {ex.Message}");
         }
+    }
+
+    public async Task<ServerStats> GetLiveStatsAsync(ServerInstance instance)
+    {
+        var stats = new ServerStats { IsOnline = false };
+
+        if (_runningContainers.TryGetValue(instance.Id, out string? containerId))
+        {
+            stats.IsOnline = true;
+            try
+            {
+                // 1. Get Docker Stats
+                // GetContainerStatsAsync returns a stream of stats objects if Stream=true, or just one if Stream=false
+                // In DotNet 3.125+, it returns an IObservable, or Stream. 
+                // However, there is no direct easy way to parse the stream payload without doing a manual read for one snapshot if Stream=false.
+                var param = new ContainerStatsParameters { Stream = false };
+                var statsResponse = await _dockerClient.Containers.GetContainerStatsAsync(containerId, param, CancellationToken.None);
+                
+                // Usually stream=false returns a single stream chunk which is JSON. But Docker.DotNet maps this to a Stream that emits JSON strings.
+                // An easier way is just to read the stream and deserialize.
+                using var reader = new System.IO.StreamReader(statsResponse);
+                string json = await reader.ReadLineAsync() ?? "";
+                if (!string.IsNullOrEmpty(json))
+                {
+                    var doc = System.Text.Json.JsonDocument.Parse(json);
+                    
+                    // RAM
+                    if (doc.RootElement.TryGetProperty("memory_stats", out var memStats))
+                    {
+                        if (memStats.TryGetProperty("usage", out var usageProp))
+                        {
+                            stats.RamUsageMb = usageProp.GetDouble() / (1024 * 1024);
+                        }
+                        if (memStats.TryGetProperty("limit", out var limitProp))
+                        {
+                            stats.RamLimitMb = limitProp.GetDouble() / (1024 * 1024);
+                        }
+                    }
+
+                    // CPU
+                    if (doc.RootElement.TryGetProperty("cpu_stats", out var cpuStats) &&
+                        doc.RootElement.TryGetProperty("precpu_stats", out var preCpuStats))
+                    {
+                        var cpuDelta = cpuStats.GetProperty("cpu_usage").GetProperty("total_usage").GetDouble() -
+                                       preCpuStats.GetProperty("cpu_usage").GetProperty("total_usage").GetDouble();
+                        var systemDelta = cpuStats.GetProperty("system_cpu_usage").GetDouble() -
+                                          preCpuStats.GetProperty("system_cpu_usage").GetDouble();
+                                          
+                        if (systemDelta > 0.0 && cpuDelta > 0.0)
+                        {
+                            var onlineCpus = cpuStats.GetProperty("online_cpus").GetDouble();
+                            stats.CpuPercentage = (cpuDelta / systemDelta) * onlineCpus * 100.0;
+                        }
+                    }
+                }
+
+                // 2. Get RCON Stats
+                if (instance.RconPort > 0 && !string.IsNullOrEmpty(instance.RconPassword))
+                {
+                    stats.OnlinePlayers = await _rconService.GetOnlinePlayersAsync(instance.Id, instance.RconPort, instance.RconPassword);
+                }
+            }
+            catch
+            {
+                // Ignore transient errors on stats pulling
+            }
+        }
+
+        return stats;
     }
 
     public string GetSavesDirectory(int instanceId)

@@ -62,6 +62,7 @@ builder.Services.AddSingleton<FactorioWebApi>(sp => new FactorioWebApi(new Facto
 builder.Services.AddSingleton<VersionManager>();
 builder.Services.AddSingleton<ModManager>();
 builder.Services.AddSingleton<InstanceManager>();
+builder.Services.AddSingleton<RconService>();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(options =>
