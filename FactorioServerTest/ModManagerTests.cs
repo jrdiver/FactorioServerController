@@ -39,7 +39,7 @@ public class ModManagerTests
         Assert.AreEqual("bobinserters", result.Name);
         Assert.AreEqual("Bob's Inserters", result.Title);
         Assert.AreEqual(123456, result.DownloadsCount);
-        Assert.AreEqual(1, result.Releases.Count);
+        Assert.HasCount(1, result.Releases);
         Assert.AreEqual("1.0.0", result.Releases[0].Version);
         
         Assert.IsNotNull(mockHandler.LastRequest);

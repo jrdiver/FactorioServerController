@@ -46,7 +46,7 @@ else
             <div>
                 <h2 class="mb-1 text-white">
                     <i class="bi bi-terminal-fill me-2 text-accent"></i>
-                    @Instance?.Name Console
+                    @Instance.Name Console
                 </h2>
                 <div class="text-muted">Live server logs and RCON interface</div>
             </div>
@@ -56,7 +56,7 @@ else
                     <label class="form-check-label text-muted" for="wordWrapToggle">Word Wrap</label>
                 </div>
                 
-                <a href="/instance/@Instance?.Id" class="btn btn-glass-secondary">
+                <a href="/instance/@Instance.Id" class="btn btn-glass-secondary">
                     <i class="bi bi-arrow-left me-2"></i>Back to Details
                 </a>
             </div>
@@ -64,7 +64,7 @@ else
 
         <div class="glass-card flex-grow-1 d-flex flex-column overflow-hidden p-0 border border-secondary" style="min-height: 0; min-width: 0; width: 100%;">
             <div id="console-output" class="flex-grow-1 p-3" style="overflow-y: scroll; overflow-x: auto; min-height: 0; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.9rem; background-color: #0f111a;">
-                @if (!InstanceManager.IsRunning(Instance.Id))
+                @if (!InstanceManager.IsRunning(Instance!.Id))
                 {
                     <div class="text-danger">Server is currently offline. Start the server to view live console logs.</div>
                 }
@@ -79,16 +79,16 @@ else
             
             <div class="bg-dark p-3 border-top border-secondary">
                 <div class="d-flex flex-wrap gap-2 mb-2">
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/time"))" disabled="@(!InstanceManager.IsRunning(Instance.Id))">
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/time"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
                         <i class="bi bi-clock me-1"></i> Time
                     </button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/players"))" disabled="@(!InstanceManager.IsRunning(Instance.Id))">
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/players"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
                         <i class="bi bi-people me-1"></i> Players
                     </button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/server-save"))" disabled="@(!InstanceManager.IsRunning(Instance.Id))">
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/server-save"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
                         <i class="bi bi-save me-1"></i> Save Server
                     </button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/admins"))" disabled="@(!InstanceManager.IsRunning(Instance.Id))">
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/admins"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
                         <i class="bi bi-shield-lock me-1"></i> Admins
                     </button>
                 </div>
@@ -96,9 +96,9 @@ else
                     <input type="text" @bind="RconInput" @bind:event="oninput" 
                            class="form-control bg-transparent text-white border-secondary flex-grow-1" 
                            placeholder="Enter RCON command (e.g. time, players, save)..." 
-                           disabled="@(!InstanceManager.IsRunning(Instance.Id))" />
+                           disabled="@(!InstanceManager.IsRunning(Instance!.Id))" />
                            
-                    <button type="submit" class="btn btn-accent" disabled="@(!InstanceManager.IsRunning(Instance.Id) || string.IsNullOrWhiteSpace(RconInput))">
+                    <button type="submit" class="btn btn-accent" disabled="@(!InstanceManager.IsRunning(Instance!.Id) || string.IsNullOrWhiteSpace(RconInput))">
                         <span><i class="bi bi-send-fill me-2"></i>Send</span>
                     </button>
                 </form>
@@ -114,7 +114,6 @@ else
     private ServerInstance? Instance;
     private List<string> Logs = new();
     private string RconInput = "";
-    private bool IsSending = false;
     private bool WrapLogs = false; // Default to no wrap as requested
     
     private MultiplexedStream? _logStream;
