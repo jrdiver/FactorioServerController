@@ -1,0 +1,395 @@
+@page "/instance/{Id:int}/settings"
+@using FactorioLibrary.Models
+@using FactorioLibrary.Services
+@using FactorioLibrary.Data
+@using Microsoft.EntityFrameworkCore
+@using System.IO
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject AppDbContext DbContext
+@inject InstanceManager InstanceManager
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserManager<IdentityUser> UserManager
+
+<PageTitle>Server Settings - @(Instance?.Name ?? "Loading...")</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="/instance/@Id" class="btn btn-glass-secondary mb-3"><i class="bi bi-arrow-left me-2"></i>Back to Server Details</a>
+            <h1 class="display-6 text-accent mb-0">Server Settings</h1>
+            <p class="text-muted mt-2">@(Instance?.Name ?? "Loading...")</p>
+        </div>
+        <div>
+            <button class="btn btn-primary" @onclick="SaveSettings"><i class="bi bi-save me-2"></i>Save Settings</button>
+        </div>
+    </div>
+
+    @if (Instance == null)
+    {
+        <div class="d-flex justify-content-center mt-5">
+            <div class="spinner-border text-accent" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(ErrorMessage))
+        {
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>@ErrorMessage
+            </div>
+        }
+        @if (ShowSaveSuccess)
+        {
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle-fill me-2"></i>Settings saved successfully! You must restart the server for these changes to take effect.
+            </div>
+        }
+
+        <div class="glass-panel p-4">
+            <ul class="nav nav-tabs border-secondary mb-4" id="settingsTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link @(ActiveTab == "friendly" ? "active" : "") bg-transparent border-0 text-@(ActiveTab == "friendly" ? "accent fw-bold" : "muted")" @onclick="@(() => SwitchTab("friendly"))">Friendly Form</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link @(ActiveTab == "raw" ? "active" : "") bg-transparent border-0 text-@(ActiveTab == "raw" ? "accent fw-bold" : "muted")" @onclick="@(() => SwitchTab("raw"))">Raw JSON</button>
+                </li>
+            </ul>
+
+            <div class="tab-content">
+                @if (ActiveTab == "friendly")
+                {
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <div class="glass-card h-100">
+                                <h5 class="mb-4 text-accent"><i class="bi bi-info-circle-fill me-2"></i>Basic Information</h5>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">Server Name</label>
+                                    <input type="text" class="form-control bg-dark text-white border-secondary" @bind="SettingsModel.Name" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">Description</label>
+                                    <textarea class="form-control bg-dark text-white border-secondary" rows="3" @bind="SettingsModel.Description"></textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">Max Players <small class="fst-italic">(0 for unlimited)</small></label>
+                                    <input type="number" class="form-control bg-dark text-white border-secondary" @bind="SettingsModel.MaxPlayers" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">Game Password</label>
+                                    <input type="text" class="form-control bg-dark text-white border-secondary" @bind="SettingsModel.GamePassword" autocomplete="new-password" />
+                                    <small class="text-muted d-block mt-1">Leave blank for no password</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-4">
+                            <div class="glass-card h-100">
+                                <h5 class="mb-4 text-accent"><i class="bi bi-globe me-2"></i>Visibility & Network</h5>
+                                
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" id="publicServer" @bind="SettingsModel.Visibility.Public" />
+                                    <label class="form-check-label text-white" for="publicServer">Public Server <small class="text-muted d-block">Announce the server on the matching server</small></label>
+                                </div>
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" id="lanServer" @bind="SettingsModel.Visibility.Lan" />
+                                    <label class="form-check-label text-white" for="lanServer">LAN Server <small class="text-muted d-block">Broadcast the server on LAN</small></label>
+                                </div>
+                                <div class="form-check form-switch mb-4">
+                                    <input class="form-check-input" type="checkbox" id="requireVerify" @bind="SettingsModel.RequireUserVerification" />
+                                    <label class="form-check-label text-white" for="requireVerify">Require User Verification <small class="text-muted d-block">Verify player identity with Factorio.com</small></label>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">Authentication Method</label>
+                                    <div class="btn-group w-100" role="group">
+                                        <input type="radio" class="btn-check" name="authMethod" id="authMethodToken" autocomplete="off" 
+                                               checked="@(AuthMethod == "token")" @onchange="@(() => AuthMethod = "token")">
+                                        <label class="btn btn-outline-secondary" for="authMethodToken">Service Token</label>
+
+                                        <input type="radio" class="btn-check" name="authMethod" id="authMethodPassword" autocomplete="off" 
+                                               checked="@(AuthMethod == "password")" @onchange="@(() => AuthMethod = "password")">
+                                        <label class="btn btn-outline-secondary" for="authMethodPassword">Password</label>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">Factorio Username</label>
+                                    <input type="text" class="form-control bg-dark text-white border-secondary" @bind="SettingsModel.Username" autocomplete="off" />
+                                </div>
+
+                                @if (AuthMethod == "token")
+                                {
+                                    <div class="mb-4">
+                                        <label class="form-label text-muted">Service Token</label>
+                                        <input type="password" class="form-control bg-dark text-white border-secondary" @bind="SettingsModel.Token" autocomplete="new-password" />
+                                        <small class="text-muted d-block mt-1">Get this from factorio.com/profile</small>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="mb-4">
+                                        <label class="form-label text-muted">Factorio Password</label>
+                                        <input type="password" class="form-control bg-dark text-white border-secondary" @bind="SettingsModel.Password" autocomplete="new-password" />
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-4">
+                            <div class="glass-card h-100">
+                                <h5 class="mb-4 text-accent"><i class="bi bi-clock-history me-2"></i>Saving & AFK</h5>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">Autosave Interval (minutes)</label>
+                                    <input type="number" class="form-control bg-dark text-white border-secondary" @bind="SettingsModel.AutosaveInterval" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">Autosave Slots <small class="fst-italic">(How many saves to keep)</small></label>
+                                    <input type="number" class="form-control bg-dark text-white border-secondary" @bind="SettingsModel.AutosaveSlots" />
+                                </div>
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" id="nonBlockingSave" @bind="SettingsModel.NonBlockingSaving" />
+                                    <label class="form-check-label text-white" for="nonBlockingSave">Non-Blocking Saving <small class="text-muted d-block">Experimental: Fork process to save (requires more RAM)</small></label>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">AFK Autokick Interval (minutes) <small class="fst-italic">(0 to disable)</small></label>
+                                    <input type="number" class="form-control bg-dark text-white border-secondary" @bind="SettingsModel.AfkAutokickInterval" />
+                                </div>
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="autoPause" @bind="SettingsModel.AutoPause" />
+                                    <label class="form-check-label text-white" for="autoPause">Auto Pause <small class="text-muted d-block">Pause the game when no players are connected</small></label>
+                                </div>
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" id="adminPause" @bind="SettingsModel.OnlyAdminsCanPauseTheGame" />
+                                    <label class="form-check-label text-white" for="adminPause">Admins Only Pause <small class="text-muted d-block">Only admins can manually pause the game</small></label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-4">
+                            <div class="glass-card h-100">
+                                <h5 class="mb-4 text-accent"><i class="bi bi-terminal me-2"></i>Advanced</h5>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">Allow Commands</label>
+                                    <select class="form-select bg-dark text-white border-secondary" @bind="SettingsModel.AllowCommands">
+                                        <option value="true">True (Everyone)</option>
+                                        <option value="false">False (No one)</option>
+                                        <option value="admins-only">Admins Only</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">Max Upload Slots</label>
+                                    <input type="number" class="form-control bg-dark text-white border-secondary" @bind="SettingsModel.MaxUploadSlots" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-muted">Max Upload Speed (KB/s) <small class="fst-italic">(0 for unlimited)</small></label>
+                                    <input type="number" class="form-control bg-dark text-white border-secondary" @bind="SettingsModel.MaxUploadInKilobytesPerSecond" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (ActiveTab == "raw")
+                {
+                    <div class="mb-3">
+                        <textarea class="form-control bg-dark text-white border-secondary font-monospace" rows="20" @bind="RawJson" style="font-size: 0.9em;"></textarea>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private ServerInstance? Instance;
+    private ServerSettingsModel SettingsModel = new();
+    private string RawJson = "";
+    private string ActiveTab = "friendly";
+    private string? ErrorMessage;
+    private bool ShowSaveSuccess = false;
+
+    private string AuthMethod = "token"; // password or token
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        
+        if (user == null)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        bool isAdmin = await UserManager.IsInRoleAsync(user, "Administrator");
+        if (!isAdmin)
+        {
+            bool hasAccess = await DbContext.UserServerAccesses.AnyAsync(usa => usa.UserId == user.Id && usa.ServerInstanceId == Id);
+            if (!hasAccess)
+            {
+                Navigation.NavigateTo("/");
+                return;
+            }
+        }
+
+        Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
+        if (Instance == null)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        LoadSettings();
+    }
+
+    private void LoadSettings()
+    {
+        try
+        {
+            var settingsPath = Path.Combine(InstanceManager.GetConfigDirectory(Id), "server-settings.json");
+            if (File.Exists(settingsPath))
+            {
+                RawJson = File.ReadAllText(settingsPath);
+                
+                // Try to parse it to the friendly model
+                try
+                {
+                    var parsed = JsonSerializer.Deserialize<ServerSettingsModel>(RawJson);
+                    if (parsed != null)
+                    {
+                        SettingsModel = parsed;
+                        if (!string.IsNullOrEmpty(SettingsModel.Password) && string.IsNullOrEmpty(SettingsModel.Token))
+                        {
+                            AuthMethod = "password";
+                        }
+                    }
+                }
+                catch
+                {
+                    // If parsing fails, fall back to default, but the Raw JSON tab still has their stuff
+                    SettingsModel = new ServerSettingsModel();
+                }
+            }
+            else
+            {
+                // File doesn't exist, generate default
+                SettingsModel = new ServerSettingsModel();
+                RawJson = JsonSerializer.Serialize(SettingsModel, new JsonSerializerOptions { WriteIndented = true });
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error loading settings: {ex.Message}";
+        }
+    }
+
+    private void SwitchTab(string tab)
+    {
+        // When switching from Friendly to Raw, serialize the current model
+        if (ActiveTab == "friendly" && tab == "raw")
+        {
+            RawJson = JsonSerializer.Serialize(SettingsModel, new JsonSerializerOptions { WriteIndented = true });
+        }
+        // When switching from Raw to Friendly, parse the JSON
+        else if (ActiveTab == "raw" && tab == "friendly")
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<ServerSettingsModel>(RawJson);
+                if (parsed != null)
+                {
+                    SettingsModel = parsed;
+                    ErrorMessage = null;
+                }
+            }
+            catch (JsonException)
+            {
+                ErrorMessage = "The JSON in the Raw tab is invalid. Cannot switch back to Friendly view until it is fixed.";
+                return; // Prevent tab switch
+            }
+        }
+
+        ActiveTab = tab;
+    }
+
+    private async Task SaveSettings()
+    {
+        ErrorMessage = null;
+        ShowSaveSuccess = false;
+
+        try
+        {
+            string jsonToSave;
+            
+            if (ActiveTab == "friendly")
+            {
+                // Clear the unselected auth method so it doesn't get written out
+                if (AuthMethod == "token")
+                {
+                    SettingsModel.Password = null;
+                    if (string.IsNullOrEmpty(SettingsModel.Token)) SettingsModel.Token = null;
+                }
+                else
+                {
+                    SettingsModel.Token = null;
+                    if (string.IsNullOrEmpty(SettingsModel.Password)) SettingsModel.Password = null;
+                }
+                
+                // Clear empty game password just to keep JSON clean
+                if (string.IsNullOrEmpty(SettingsModel.GamePassword)) SettingsModel.GamePassword = null;
+
+                jsonToSave = JsonSerializer.Serialize(SettingsModel, new JsonSerializerOptions { WriteIndented = true });
+            }
+            else
+            {
+                // Validate raw json first
+                JsonDocument.Parse(RawJson);
+                jsonToSave = RawJson;
+            }
+
+            var settingsPath = Path.Combine(InstanceManager.GetConfigDirectory(Id), "server-settings.json");
+            var configDir = Path.GetDirectoryName(settingsPath);
+            
+            if (configDir != null && !Directory.Exists(configDir))
+            {
+                Directory.CreateDirectory(configDir);
+            }
+
+            await File.WriteAllTextAsync(settingsPath, jsonToSave);
+            
+            ShowSaveSuccess = true;
+            
+            // Sync the model and raw text for consistency
+            if (ActiveTab == "friendly")
+            {
+                RawJson = jsonToSave;
+            }
+            else
+            {
+                var parsed = JsonSerializer.Deserialize<ServerSettingsModel>(jsonToSave);
+                if (parsed != null) SettingsModel = parsed;
+            }
+
+            await Task.Delay(4000);
+            ShowSaveSuccess = false;
+            StateHasChanged();
+        }
+        catch (JsonException ex)
+        {
+            ErrorMessage = $"Invalid JSON format: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error saving settings: {ex.Message}";
+        }
+    }
+}

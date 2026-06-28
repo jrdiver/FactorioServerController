@@ -5,11 +5,15 @@
 @using FactorioLibrary
 @using FactorioLibrary.Objects
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
 @inject NavigationManager Navigation
 @inject FactorioWebApi WebApi
 @inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserManager<IdentityUser> UserManager
 
 <script>
     window.formatLocalTimes = () => {
@@ -98,11 +102,16 @@ else
                         <div class="row mb-4">
                             <div class="col-md-6">
                                 <label class="form-label text-muted">RCON Port</label>
-                                <InputNumber @bind-Value="Instance.RconPort" class="form-control bg-transparent text-white border-secondary" />
+                                <InputNumber @bind-Value="Instance.RconPort" autocomplete="new-password" class="form-control bg-transparent text-white border-secondary" />
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label text-muted">RCON Password</label>
-                                <InputText @bind-Value="Instance.RconPassword" type="password" class="form-control bg-transparent text-white border-secondary" />
+                                <div class="input-group">
+                                    <InputText @bind-Value="Instance.RconPassword" type="@(ShowRconPassword ? "text" : "password")" autocomplete="new-password" class="form-control bg-transparent text-white border-secondary" />
+                                    <button type="button" class="btn btn-outline-secondary border-secondary text-muted" @onclick="() => ShowRconPassword = !ShowRconPassword">
+                                        <i class="bi @(ShowRconPassword ? "bi-eye-slash" : "bi-eye")"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -118,23 +127,6 @@ else
                             <button type="submit" class="btn btn-glass"><i class="bi bi-save-fill me-2"></i>Save Changes</button>
                         </div>
                     </EditForm>
-                    
-                    <div class="mt-4 pt-4 border-top border-secondary">
-                        <h5 class="text-danger mb-3"><i class="bi bi-exclamation-triangle me-2"></i>Troubleshooting</h5>
-                        <div class="d-flex align-items-center justify-content-between p-3 rounded bg-dark border border-danger border-opacity-50">
-                            <div>
-                                <h6 class="mb-1">Factory Reset Configurations</h6>
-                                <small class="text-muted">Wipes config/ and player-data.json. Use this if the server fails to start after downgrading Factorio versions.</small>
-                            </div>
-                            <button class="btn btn-outline-danger ms-3" @onclick="FactoryResetConfigs">
-                                Reset Configs
-                            </button>
-                        </div>
-                        @if (ShowResetSuccess)
-                        {
-                            <div class="text-success mt-2"><i class="bi bi-check-circle-fill me-2"></i>Configs reset successfully.</div>
-                        }
-                    </div>
                 </div>
 
                 <div class="glass-card mb-4">
@@ -257,10 +249,81 @@ else
                     <div class="d-grid gap-2">
                         <a href="/instance/@Id/mods" class="btn btn-glass-secondary text-start"><i class="bi bi-puzzle me-2"></i>Manage Mods</a>
                         <a href="/instance/@Id/console" class="btn btn-glass-secondary text-start"><i class="bi bi-terminal me-2"></i>Server Console</a>
-                        <button class="btn btn-glass-secondary text-start"><i class="bi bi-file-earmark-text me-2"></i>Edit server-settings.json</button>
-                        <hr class="border-secondary my-2" />
-                        <button class="btn btn-glass-secondary text-start text-danger" @onclick="DeleteServer"><i class="bi bi-trash me-2"></i>Delete Server</button>
+                        <a href="/instance/@Id/settings" class="btn btn-glass-secondary text-start"><i class="bi bi-file-earmark-text me-2"></i>Edit server-settings.json</a>
+                        <AuthorizeView Roles="Administrator">
+                            <Authorized>
+                                <hr class="border-secondary my-2" />
+                                <button class="btn btn-glass-secondary text-start text-warning" @onclick="PromptResetConfigs"><i class="bi bi-arrow-counterclockwise me-2"></i>Reset Configs</button>
+                                <button class="btn btn-glass-secondary text-start text-danger" @onclick="PromptDeleteServer"><i class="bi bi-trash me-2"></i>Delete Server</button>
+                            </Authorized>
+                        </AuthorizeView>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowResetConfirmation)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.7);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-warning"><i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Reset</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CancelResetConfigs"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-white mb-2">Are you sure you want to reset configs for <strong>@Instance?.Name</strong>?</p>
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-exclamation-circle me-2"></i>
+                        <strong>Warning:</strong> This will completely wipe the <code>config/</code> directory and <code>player-data.json</code>.
+                        <br/><br/>
+                        Use this if the server fails to start after downgrading Factorio versions or if you want to restore default settings.
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-glass-secondary" @onclick="CancelResetConfigs">Cancel</button>
+                    <button type="button" class="btn btn-warning" @onclick="ConfirmResetConfigs">
+                        <span><i class="bi bi-arrow-counterclockwise me-2"></i>Reset Configs</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowDeleteConfirmation)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.7);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Deletion</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CancelDeleteServer"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-white mb-2">Are you sure you want to delete <strong>@Instance?.Name</strong>?</p>
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-exclamation-circle me-2"></i>
+                        <strong>Warning:</strong> This will completely remove the server, delete its Docker container, and permanently erase all save files, configs, and mods from the disk!
+                        <br/><br/>
+                        Please ensure you have downloaded any save files or mods you want to keep before proceeding.
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-glass-secondary" @onclick="CancelDeleteServer">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteServer" disabled="@IsDeleting">
+                        @if (IsDeleting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            <span>Deleting...</span>
+                        }
+                        else
+                        {
+                            <span><i class="bi bi-trash me-2"></i>Permanently Delete</span>
+                        }
+                    </button>
                 </div>
             </div>
         </div>
@@ -274,10 +337,13 @@ else
     private ServerInstance? Instance;
     private List<DockerTagInfo> AvailableVersions = new();
     private bool ShowSaveSuccess = false;
-    private bool ShowResetSuccess = false;
     private List<SaveFileInfo>? SaveFiles;
     private bool IsUploading = false;
     private string? UploadError;
+    private bool ShowDeleteConfirmation = false;
+    private bool IsDeleting = false;
+    private bool ShowResetConfirmation = false;
+    private bool ShowRconPassword = false;
 
     private class SaveFileInfo
     {
@@ -289,6 +355,26 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        
+        if (user == null)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        bool isAdmin = await UserManager.IsInRoleAsync(user, "Administrator");
+        if (!isAdmin)
+        {
+            bool hasAccess = await DbContext.UserServerAccesses.AnyAsync(usa => usa.UserId == user.Id && usa.ServerInstanceId == Id);
+            if (!hasAccess)
+            {
+                Navigation.NavigateTo("/");
+                return;
+            }
+        }
+
         Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
         if (Instance == null)
         {
@@ -340,15 +426,23 @@ else
         }
     }
 
-    private async Task FactoryResetConfigs()
+    private void PromptResetConfigs()
     {
+        ShowResetConfirmation = true;
+    }
+
+    private void CancelResetConfigs()
+    {
+        ShowResetConfirmation = false;
+    }
+
+    private void ConfirmResetConfigs()
+    {
+        ShowResetConfirmation = false;
         InstanceManager.FactoryResetConfigs(Id);
-        ShowResetSuccess = true;
         StateHasChanged();
         
-        await Task.Delay(3000);
-        ShowResetSuccess = false;
-        StateHasChanged();
+        // Let the user know via a small UI update if we want, or just rely on them seeing the modal close
     }
 
     private async Task StartServer()
@@ -364,13 +458,27 @@ else
         await InstanceManager.StopInstanceAsync(Id);
     }
 
-    private async Task DeleteServer()
+    private void PromptDeleteServer()
+    {
+        ShowDeleteConfirmation = true;
+    }
+
+    private void CancelDeleteServer()
+    {
+        ShowDeleteConfirmation = false;
+    }
+
+    private async Task ConfirmDeleteServer()
     {
         if (Instance != null)
         {
-            // First ensure it is stopped
-            await InstanceManager.StopInstanceAsync(Id);
+            IsDeleting = true;
+            StateHasChanged();
             
+            // Delete docker container and all host files
+            await InstanceManager.DeleteInstanceDataAsync(Id);
+            
+            // Remove from DB
             DbContext.ServerInstances.Remove(Instance);
             await DbContext.SaveChangesAsync();
             Navigation.NavigateTo("/");

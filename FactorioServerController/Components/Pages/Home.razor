@@ -5,10 +5,14 @@
 @using FactorioLibrary
 @using FactorioLibrary.Objects
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
 @inject NavigationManager Navigation
 @inject FactorioWebApi WebApi
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserManager<IdentityUser> UserManager
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -18,9 +22,13 @@
             <h1 class="display-5 text-accent mb-0"><i class="bi bi-cpu-fill me-2"></i>Factorio Instances</h1>
             <p class="text-muted mt-2">Manage your servers and processes</p>
         </div>
-        <div class="col-auto">
-            <button class="btn btn-glass" @onclick="CreateNewInstance"><i class="bi bi-plus-lg me-2"></i>New Instance</button>
-        </div>
+        <AuthorizeView Roles="Administrator">
+            <Authorized>
+                <div class="col-auto">
+                    <button class="btn btn-glass" @onclick="CreateNewInstance"><i class="bi bi-plus-lg me-2"></i>New Instance</button>
+                </div>
+            </Authorized>
+        </AuthorizeView>
     </div>
 
     @if (Instances == null)
@@ -37,7 +45,11 @@
             <i class="bi bi-hdd-network display-1 text-muted mb-3 d-block"></i>
             <h3>No instances found</h3>
             <p class="text-muted mb-4">You don't have any Factorio servers configured yet.</p>
-            <button class="btn btn-glass" @onclick="CreateNewInstance">Create Your First Server</button>
+            <AuthorizeView Roles="Administrator">
+                <Authorized>
+                    <button class="btn btn-glass" @onclick="CreateNewInstance">Create Your First Server</button>
+                </Authorized>
+            </AuthorizeView>
         </div>
     }
     else
@@ -98,7 +110,33 @@
 
     private async Task LoadInstances()
     {
-        Instances = await DbContext.ServerInstances.ToListAsync();
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        
+        if (user == null)
+        {
+            Instances = new();
+            return;
+        }
+
+        bool isAdmin = await UserManager.IsInRoleAsync(user, "Administrator");
+
+        if (isAdmin)
+        {
+            Instances = await DbContext.ServerInstances.ToListAsync();
+        }
+        else
+        {
+            var allowedServerIds = await DbContext.UserServerAccesses
+                .Where(usa => usa.UserId == user.Id)
+                .Select(usa => usa.ServerInstanceId)
+                .ToListAsync();
+                
+            Instances = await DbContext.ServerInstances
+                .Where(s => allowedServerIds.Contains(s.Id))
+                .ToListAsync();
+        }
+        
         try
         {
             AvailableVersions = await WebApi.GetDockerTagsAsync();

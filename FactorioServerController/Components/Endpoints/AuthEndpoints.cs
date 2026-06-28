@@ -36,6 +36,7 @@ public static class AuthEndpoints
             [FromForm] string password,
             [FromForm] string confirmPassword,
             UserManager<IdentityUser> userManager,
+            RoleManager<IdentityRole> roleManager,
             SignInManager<IdentityUser> signInManager,
             AppDbContext db) =>
         {
@@ -62,6 +63,13 @@ public static class AuthEndpoints
                 db.UserApiKeys.Add(apiKey);
                 await db.SaveChangesAsync();
 
+                // Create Administrator role if it doesn't exist and assign to user
+                if (!await roleManager.RoleExistsAsync("Administrator"))
+                {
+                    await roleManager.CreateAsync(new IdentityRole("Administrator"));
+                }
+                await userManager.AddToRoleAsync(user, "Administrator");
+
                 await signInManager.SignInAsync(user, isPersistent: true);
                 return Results.Redirect("/");
             }
@@ -74,5 +82,34 @@ public static class AuthEndpoints
             await signInManager.SignOutAsync();
             return Results.Redirect("/login");
         }).DisableAntiforgery();
+
+        group.MapPost("/change-password", async (
+            [FromForm] string currentPassword,
+            [FromForm] string newPassword,
+            [FromForm] string confirmPassword,
+            UserManager<IdentityUser> userManager,
+            SignInManager<IdentityUser> signInManager,
+            System.Security.Claims.ClaimsPrincipal principal) =>
+        {
+            if (newPassword != confirmPassword)
+            {
+                return Results.Redirect("/settings?error=Passwords do not match");
+            }
+
+            var user = await userManager.GetUserAsync(principal);
+            if (user == null)
+            {
+                return Results.Redirect("/login");
+            }
+
+            var result = await userManager.ChangePasswordAsync(user, currentPassword, newPassword);
+            if (result.Succeeded)
+            {
+                await signInManager.RefreshSignInAsync(user);
+                return Results.Redirect("/settings?msg=Password changed successfully");
+            }
+            
+            return Results.Redirect($"/settings?error={Uri.EscapeDataString(result.Errors.FirstOrDefault()?.Description ?? "Error changing password")}");
+        }).RequireAuthorization().DisableAntiforgery();
     }
 }

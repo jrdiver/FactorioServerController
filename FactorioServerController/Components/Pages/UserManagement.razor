@@ -1,0 +1,362 @@
+@page "/users"
+@using FactorioLibrary.Data
+@using FactorioLibrary.Models
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize(Roles = "Administrator")]
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserManager<IdentityUser> UserManager
+@inject AppDbContext DbContext
+@inject NavigationManager Navigation
+
+<PageTitle>User Management</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="row mb-4 align-items-center">
+        <div class="col">
+            <h1 class="display-5 text-accent mb-0"><i class="bi bi-people-fill me-2"></i>User Management</h1>
+            <p class="text-muted mt-2">Manage users and their server access</p>
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-glass" @onclick="ShowCreateUserModal"><i class="bi bi-person-plus-fill me-2"></i>New User</button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <div class="alert alert-danger mb-4">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>@ErrorMessage
+        </div>
+    }
+
+    <div class="glass-panel p-4">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Assigned Servers</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var user in Users)
+                    {
+                        <tr>
+                            <td class="align-middle">@user.User.UserName</td>
+                            <td class="align-middle">
+                                @if (user.IsAdmin)
+                                {
+                                    <span class="badge bg-primary">Administrator</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">User</span>
+                                }
+                            </td>
+                            <td class="align-middle">
+                                @if (user.IsAdmin)
+                                {
+                                    <span class="text-muted">All Servers</span>
+                                }
+                                else
+                                {
+                                    @if (user.ServerAccesses.Any())
+                                    {
+                                        <div class="d-flex flex-wrap gap-1">
+                                            @foreach (var access in user.ServerAccesses)
+                                            {
+                                                var server = Servers.FirstOrDefault(s => s.Id == access.ServerInstanceId);
+                                                if (server != null)
+                                                {
+                                                    <span class="badge border border-secondary text-light">@server.Name</span>
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted fst-italic">None</span>
+                                    }
+                                }
+                            </td>
+                            <td class="align-middle">
+                                @if (!user.IsAdmin)
+                                {
+                                    <button class="btn btn-sm btn-glass-secondary me-2" @onclick="() => ShowAccessModal(user.User)">
+                                        <i class="bi bi-shield-lock me-1"></i> Access
+                                    </button>
+                                    <button class="btn btn-sm btn-glass-secondary text-primary me-2" @onclick="() => ToggleAdminRole(user.User, true)">
+                                        <i class="bi bi-star-fill me-1"></i> Promote
+                                    </button>
+                                    
+                                    if (user.User.Id != CurrentUserId)
+                                    {
+                                        <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteUser(user.User)" title="Delete User">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-glass-secondary text-muted" disabled title="You cannot delete yourself">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    }
+                                }
+                                else
+                                {
+                                    if (user.User.Id != CurrentUserId)
+                                    {
+                                        <button class="btn btn-sm btn-glass-secondary text-warning" @onclick="() => ToggleAdminRole(user.User, false)">
+                                            <i class="bi bi-star me-1"></i> Demote
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-glass-secondary text-muted" disabled title="You cannot demote yourself">
+                                            <i class="bi bi-star me-1"></i> Demote
+                                        </button>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@if (IsCreateUserModalOpen)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.7);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-accent"><i class="bi bi-person-plus-fill me-2"></i>Create New User</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseCreateUserModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label text-muted">Username</label>
+                        <input type="text" class="form-control bg-dark text-white border-secondary" @bind="NewUsername" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-muted">Password</label>
+                        <input type="password" class="form-control bg-dark text-white border-secondary" @bind="NewPassword" />
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="newUserIsAdmin" @bind="NewUserIsAdmin" />
+                        <label class="form-check-label text-muted" for="newUserIsAdmin">Make this user an Administrator</label>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-glass-secondary" @onclick="CloseCreateUserModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="CreateUser">Create User</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (IsAccessModalOpen && SelectedUser != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.7);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-accent"><i class="bi bi-shield-lock-fill me-2"></i>Manage Access for @SelectedUser.UserName</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseAccessModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted mb-3">Select the servers this user is allowed to view and manage.</p>
+                    
+                    <div class="list-group">
+                        @foreach (var server in Servers)
+                        {
+                            bool hasAccess = SelectedUserAccesses.Contains(server.Id);
+                            <label class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between align-items-center" style="cursor: pointer;">
+                                <div>
+                                    <h6 class="mb-0">@server.Name</h6>
+                                    <small class="text-muted">Port: @server.Port</small>
+                                </div>
+                                <input class="form-check-input mt-0" type="checkbox" checked="@hasAccess" @onchange="(e) => ToggleAccess(server.Id, e.Value)" style="width: 1.5em; height: 1.5em;" />
+                            </label>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-primary" @onclick="CloseAccessModal">Done</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<UserInfo> Users = new();
+    private List<ServerInstance> Servers = new();
+    private string? ErrorMessage;
+
+    // Create Modal state
+    private bool IsCreateUserModalOpen = false;
+    private string NewUsername = "";
+    private string NewPassword = "";
+    private bool NewUserIsAdmin = false;
+
+    // Access Modal state
+    private bool IsAccessModalOpen = false;
+    private IdentityUser? SelectedUser;
+    private HashSet<int> SelectedUserAccesses = new();
+    private string? CurrentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        CurrentUserId = user?.Id;
+        
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Servers = await DbContext.ServerInstances.ToListAsync();
+        var allUsers = await UserManager.Users.ToListAsync();
+        
+        Users.Clear();
+        foreach (var u in allUsers)
+        {
+            bool isAdmin = await UserManager.IsInRoleAsync(u, "Administrator");
+            var accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == u.Id).ToListAsync();
+            
+            Users.Add(new UserInfo
+            {
+                User = u,
+                IsAdmin = isAdmin,
+                ServerAccesses = accesses
+            });
+        }
+    }
+
+    private void ShowCreateUserModal()
+    {
+        NewUsername = "";
+        NewPassword = "";
+        NewUserIsAdmin = false;
+        ErrorMessage = null;
+        IsCreateUserModalOpen = true;
+    }
+
+    private void CloseCreateUserModal()
+    {
+        IsCreateUserModalOpen = false;
+    }
+
+    private async Task CreateUser()
+    {
+        if (string.IsNullOrWhiteSpace(NewUsername) || string.IsNullOrWhiteSpace(NewPassword))
+        {
+            ErrorMessage = "Username and password are required.";
+            IsCreateUserModalOpen = false;
+            return;
+        }
+
+        var user = new IdentityUser { UserName = NewUsername };
+        var result = await UserManager.CreateAsync(user, NewPassword);
+        
+        if (result.Succeeded)
+        {
+            if (NewUserIsAdmin)
+            {
+                await UserManager.AddToRoleAsync(user, "Administrator");
+            }
+            await LoadData();
+        }
+        else
+        {
+            ErrorMessage = result.Errors.FirstOrDefault()?.Description ?? "Failed to create user.";
+        }
+        
+        IsCreateUserModalOpen = false;
+    }
+
+    private async Task ShowAccessModal(IdentityUser user)
+    {
+        SelectedUser = user;
+        var accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == user.Id).Select(usa => usa.ServerInstanceId).ToListAsync();
+        SelectedUserAccesses = new HashSet<int>(accesses);
+        IsAccessModalOpen = true;
+    }
+
+    private void CloseAccessModal()
+    {
+        IsAccessModalOpen = false;
+        SelectedUser = null;
+    }
+
+    private async Task ToggleAccess(int serverId, object? checkedValue)
+    {
+        if (SelectedUser == null) return;
+
+        bool isChecked = (bool?)checkedValue ?? false;
+        
+        if (isChecked)
+        {
+            if (!SelectedUserAccesses.Contains(serverId))
+            {
+                DbContext.UserServerAccesses.Add(new UserServerAccess { UserId = SelectedUser.Id, ServerInstanceId = serverId });
+                await DbContext.SaveChangesAsync();
+                SelectedUserAccesses.Add(serverId);
+            }
+        }
+        else
+        {
+            var access = await DbContext.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == SelectedUser.Id && usa.ServerInstanceId == serverId);
+            if (access != null)
+            {
+                DbContext.UserServerAccesses.Remove(access);
+                await DbContext.SaveChangesAsync();
+                SelectedUserAccesses.Remove(serverId);
+            }
+        }
+        
+        await LoadData(); // Refresh UI
+    }
+
+    private async Task ToggleAdminRole(IdentityUser user, bool makeAdmin)
+    {
+        if (makeAdmin)
+        {
+            await UserManager.AddToRoleAsync(user, "Administrator");
+        }
+        else
+        {
+            await UserManager.RemoveFromRoleAsync(user, "Administrator");
+        }
+        await LoadData();
+    }
+
+    private async Task DeleteUser(IdentityUser user)
+    {
+        var accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == user.Id).ToListAsync();
+        if (accesses.Any())
+        {
+            DbContext.UserServerAccesses.RemoveRange(accesses);
+            await DbContext.SaveChangesAsync();
+        }
+        
+        await UserManager.DeleteAsync(user);
+        await LoadData();
+    }
+
+    private class UserInfo
+    {
+        public IdentityUser User { get; set; } = null!;
+        public bool IsAdmin { get; set; }
+        public List<UserServerAccess> ServerAccesses { get; set; } = new();
+    }
+}

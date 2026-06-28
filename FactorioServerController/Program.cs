@@ -32,9 +32,25 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthentication()
     .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>("ApiKey", options => { });
 
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.LoginPath = "/login";
+    options.LogoutPath = "/api/auth/logout";
+    options.AccessDeniedPath = "/not-found";
+});
+
 builder.Services.AddAuthorization();
 
-builder.Services.AddIdentityCore<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = false)
+builder.Services.AddIdentityCore<IdentityUser>(options => 
+    {
+        options.SignIn.RequireConfirmedAccount = false;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequireDigit = false;
+        options.Password.RequireUppercase = false;
+        options.Password.RequireLowercase = false;
+        options.Password.RequiredLength = 8;
+    })
+    .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<AppDbContext>()
     .AddSignInManager()
     .AddDefaultTokenProviders();
@@ -65,6 +81,25 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
+    
+    // Seed the first user as Administrator if no administrators exist
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+    
+    if (!roleManager.RoleExistsAsync("Administrator").GetAwaiter().GetResult())
+    {
+        roleManager.CreateAsync(new IdentityRole("Administrator")).GetAwaiter().GetResult();
+    }
+    
+    var admins = userManager.GetUsersInRoleAsync("Administrator").GetAwaiter().GetResult();
+    if (admins.Count == 0)
+    {
+        var firstUser = userManager.Users.FirstOrDefault();
+        if (firstUser != null)
+        {
+            userManager.AddToRoleAsync(firstUser, "Administrator").GetAwaiter().GetResult();
+        }
+    }
 }
 
 // Configure the HTTP request pipeline.

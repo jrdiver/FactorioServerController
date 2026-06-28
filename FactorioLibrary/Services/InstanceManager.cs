@@ -115,7 +115,23 @@ public class InstanceManager
             }
 
             // 4. Configure save file loading behavior
-            var loadLatest = string.IsNullOrEmpty(instance.ActiveSaveName) ? "true" : "false";
+            var savesDir = GetSavesDirectory(instance.Id);
+            bool hasSaves = Directory.Exists(savesDir) && Directory.GetFiles(savesDir, "*.zip").Any();
+
+            var loadLatest = "false";
+            if (string.IsNullOrEmpty(instance.ActiveSaveName))
+            {
+                if (hasSaves)
+                {
+                    loadLatest = "true";
+                }
+                else
+                {
+                    // No saves exist, and no active save specified. Force it to create one named after the instance.
+                    instance.ActiveSaveName = instance.Name + ".zip"; // just for this startup logic
+                }
+            }
+
             var envVars = new List<string>
             {
                 $"PORT={instance.Port}",
@@ -186,6 +202,55 @@ public class InstanceManager
             {
                 _runningContainers.TryRemove(instanceId, out _);
             }
+        }
+    }
+
+    public async Task DeleteInstanceDataAsync(int instanceId)
+    {
+        // 1. Stop and remove the container
+        string containerName = $"factorio_server_{instanceId}";
+        try
+        {
+            var existingContainers = await _dockerClient.Containers.ListContainersAsync(
+                new ContainersListParameters { All = true });
+                
+            foreach (var c in existingContainers)
+            {
+                if (c.Names.Contains($"/{containerName}"))
+                {
+                    if (c.State == "running")
+                    {
+                        await _dockerClient.Containers.StopContainerAsync(c.ID, new ContainerStopParameters { WaitBeforeKillSeconds = 10 });
+                    }
+                    await _dockerClient.Containers.RemoveContainerAsync(c.ID, new ContainerRemoveParameters { Force = true });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error removing container during delete: {ex.Message}");
+        }
+        finally
+        {
+            _runningContainers.TryRemove(instanceId, out _);
+        }
+
+        // 2. Delete host directory
+        string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
+        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
+            ? $"/factorio/{instanceId}" 
+            : instanceHostPath;
+
+        try
+        {
+            if (Directory.Exists(localDataPath))
+            {
+                Directory.Delete(localDataPath, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting host directory: {ex.Message}");
         }
     }
 
@@ -335,5 +400,15 @@ public class InstanceManager
             : instanceHostPath;
             
         return Path.Combine(localDataPath, "mods");
+    }
+
+    public string GetConfigDirectory(int instanceId)
+    {
+        string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
+        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
+            ? $"/factorio/{instanceId}" 
+            : instanceHostPath;
+            
+        return Path.Combine(localDataPath, "config");
     }
 }

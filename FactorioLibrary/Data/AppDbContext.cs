@@ -13,6 +13,7 @@ public class AppDbContext : IdentityDbContext
 
     public DbSet<ServerInstance> ServerInstances { get; set; }
     public DbSet<UserApiKey> UserApiKeys { get; set; }
+    public DbSet<UserServerAccess> UserServerAccesses { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -3,13 +3,19 @@
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
 @using FactorioLibrary
+@using FactorioLibrary.Objects
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
 @using System.Text.Json
 @using System.IO
 @using System.IO.Compression
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
+@inject ModManager ModManager
 @inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserManager<IdentityUser> UserManager
 
 <PageTitle>Mod Management - @(Instance?.Name ?? "Loading...")</PageTitle>
 
@@ -190,6 +196,26 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        
+        if (user == null)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        bool isAdmin = await UserManager.IsInRoleAsync(user, "Administrator");
+        if (!isAdmin)
+        {
+            bool hasAccess = await DbContext.UserServerAccesses.AnyAsync(usa => usa.UserId == user.Id && usa.ServerInstanceId == Id);
+            if (!hasAccess)
+            {
+                Navigation.NavigateTo("/");
+                return;
+            }
+        }
+
         Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
         if (Instance == null)
         {

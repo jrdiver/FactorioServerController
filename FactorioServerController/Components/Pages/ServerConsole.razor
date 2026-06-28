@@ -6,11 +6,15 @@
 @using Microsoft.EntityFrameworkCore
 @using System.Text
 @using Docker.DotNet
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
 @implements IAsyncDisposable
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserManager<IdentityUser> UserManager
 
 <PageTitle>Server Console - @(Instance?.Name ?? "Loading...")</PageTitle>
 
@@ -121,6 +125,26 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        
+        if (user == null)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        bool isAdmin = await UserManager.IsInRoleAsync(user, "Administrator");
+        if (!isAdmin)
+        {
+            bool hasAccess = await DbContext.UserServerAccesses.AnyAsync(usa => usa.UserId == user.Id && usa.ServerInstanceId == Id);
+            if (!hasAccess)
+            {
+                Navigation.NavigateTo("/");
+                return;
+            }
+        }
+
         Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
         if (Instance == null)
         {
