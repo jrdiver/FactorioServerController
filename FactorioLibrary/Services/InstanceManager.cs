@@ -234,6 +234,89 @@ public class InstanceManager
         return null;
     }
 
+    public async Task<(bool Success, string Logs)> SyncModsWithSaveAsync(int instanceId, string saveName, string imageTag)
+    {
+        string containerName = $"factorio_sync_{instanceId}_{Guid.NewGuid().ToString().Substring(0, 8)}";
+        string image = $"factoriotools/factorio:{imageTag}";
+        string instanceHostPath = $"{_hostBaseMountPath.TrimEnd('/', '\\')}/{instanceId}";
+
+        try
+        {
+            await _dockerClient.Images.CreateImageAsync(
+                new ImagesCreateParameters { FromImage = image }, 
+                null, 
+                new Progress<JSONMessage>());
+
+            var response = await _dockerClient.Containers.CreateContainerAsync(new CreateContainerParameters
+            {
+                Image = image,
+                Name = containerName,
+                HostConfig = new HostConfig
+                {
+                    Binds = new List<string> { $"{instanceHostPath}:/factorio" }
+                },
+                // Override the default entrypoint script so it doesn't try to boot a multiplayer server
+                Entrypoint = new List<string> { "/opt/factorio/bin/x64/factorio" },
+                // Run the sync-mods command and immediately exit
+                Cmd = new List<string> { "--sync-mods", $"/factorio/saves/{saveName}", "--mod-directory", "/factorio/mods" }
+            });
+
+            await _dockerClient.Containers.StartContainerAsync(response.ID, null);
+
+            // Wait for it to finish parsing and syncing
+            await _dockerClient.Containers.WaitContainerAsync(response.ID);
+
+            // Fetch the logs to return to the UI (especially if there's a version mismatch error)
+            var logsStream = await _dockerClient.Containers.GetContainerLogsAsync(response.ID, false, new ContainerLogsParameters
+            {
+                ShowStdout = true,
+                ShowStderr = true
+            });
+            
+            var logs = await logsStream.ReadOutputToEndAsync(default);
+            string fullLog = logs.stdout + "\n" + logs.stderr;
+            
+            // Remove the temporary container
+            await _dockerClient.Containers.RemoveContainerAsync(response.ID, new ContainerRemoveParameters { Force = true });
+
+            // If it crashed or had an error, it often outputs Error or fails to write
+            bool success = !fullLog.Contains("Error", StringComparison.OrdinalIgnoreCase);
+
+            return (success, fullLog.Trim());
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    public void FactoryResetConfigs(int instanceId)
+    {
+        string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
+        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
+            ? $"/factorio/{instanceId}" 
+            : instanceHostPath;
+
+        string configPath = Path.Combine(localDataPath, "config");
+        string playerDataPath = Path.Combine(localDataPath, "player-data.json");
+        
+        try
+        {
+            if (Directory.Exists(configPath))
+            {
+                Directory.Delete(configPath, true);
+            }
+            if (File.Exists(playerDataPath))
+            {
+                File.Delete(playerDataPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error resetting configs: {ex.Message}");
+        }
+    }
+
     public string GetSavesDirectory(int instanceId)
     {
         string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
@@ -242,5 +325,15 @@ public class InstanceManager
             : instanceHostPath;
             
         return Path.Combine(localDataPath, "saves");
+    }
+
+    public string GetModsDirectory(int instanceId)
+    {
+        string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
+        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
+            ? $"/factorio/{instanceId}" 
+            : instanceHostPath;
+            
+        return Path.Combine(localDataPath, "mods");
     }
 }

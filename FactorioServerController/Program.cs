@@ -5,6 +5,8 @@ using FactorioLibrary;
 using FactorioLibrary.Data;
 using FactorioLibrary.Services;
 using FactorioServerController.Components;
+using FactorioServerController.Components.Endpoints;
+using FactorioServerController.Auth;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +28,11 @@ builder.Services.AddAuthentication(options =>
         options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
     })
     .AddIdentityCookies();
+
+builder.Services.AddAuthentication()
+    .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>("ApiKey", options => { });
+
+builder.Services.AddAuthorization();
 
 builder.Services.AddIdentityCore<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = false)
     .AddEntityFrameworkStores<AppDbContext>()
@@ -79,6 +86,8 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+app.MapAuthEndpoints();
+
 // Minimal API endpoint for downloading save files directly
 app.MapGet("/api/instances/{id:int}/saves/{filename}", (int id, string filename, InstanceManager manager) => 
 {
@@ -91,6 +100,6 @@ app.MapGet("/api/instances/{id:int}/saves/{filename}", (int id, string filename,
         return Results.NotFound();
         
     return Results.File(filePath, "application/zip", safeFilename);
-});
+}).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 app.Run();

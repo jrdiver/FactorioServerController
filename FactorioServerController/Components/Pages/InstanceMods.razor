@@ -1,0 +1,594 @@
+@page "/instance/{Id:int}/mods"
+@using FactorioLibrary.Data
+@using FactorioLibrary.Models
+@using FactorioLibrary.Services
+@using FactorioLibrary
+@using Microsoft.EntityFrameworkCore
+@using System.Text.Json
+@using System.IO
+@using System.IO.Compression
+@inject AppDbContext DbContext
+@inject InstanceManager InstanceManager
+@inject NavigationManager Navigation
+
+<PageTitle>Mod Management - @(Instance?.Name ?? "Loading...")</PageTitle>
+
+@if (Instance == null)
+{
+    <div class="d-flex justify-content-center mt-5">
+        <div class="spinner-border text-accent" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else
+{
+    <div class="container-fluid py-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <a href="/instance/@Instance.Id" class="btn btn-glass-secondary mb-3"><i class="bi bi-arrow-left me-2"></i>Back to Settings</a>
+                <h1 class="display-6 text-white mb-0">
+                    <i class="bi bi-puzzle me-2 text-accent"></i>
+                    Mod Management
+                </h1>
+                <div class="text-muted">Upload and toggle mods for @Instance.Name</div>
+            </div>
+        </div>
+
+        <div class="glass-card mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4 class="mb-0">Installed Mods</h4>
+                <div>
+                    <button class="btn btn-glass-secondary me-3" @onclick="CheckForUpdates" disabled="@IsCheckingUpdates">
+                        @if (IsCheckingUpdates)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <span>Checking...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-arrow-repeat me-2"></i><span>Check for Updates</span>
+                        }
+                    </button>
+                    <button class="btn btn-glass-secondary me-3" @onclick="SyncWithSave" disabled="@IsSyncing">
+                        @if (IsSyncing)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span><span>Syncing...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-arrow-repeat me-2"></i><span>Sync from Save</span>
+                        }
+                    </button>
+
+                    <InputFile OnChange="UploadModFiles" class="d-none" id="modUpload" accept=".zip,.json" multiple />
+                    <button class="btn btn-glass" type="button" onclick="document.getElementById('modUpload').click()" disabled="@IsUploading">
+                        @if (IsUploading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <span>Uploading... (@UploadProgress)</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-upload me-2"></i><span>Upload Mods</span>
+                        }
+                    </button>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(UploadError))
+            {
+                <div class="alert alert-danger">@UploadError</div>
+            }
+            @if (!string.IsNullOrEmpty(SyncError))
+            {
+                <div class="alert alert-danger text-pre-wrap"><i class="bi bi-exclamation-triangle me-2"></i>@SyncError</div>
+            }
+            @if (SyncSuccess)
+            {
+                <div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>Successfully synced mod configuration with the active save file!</div>
+            }
+
+            @if (ModFiles == null)
+            {
+                <div class="text-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span> Loading mods...</div>
+            }
+            else if (!ModFiles.Any())
+            {
+                <div class="text-center text-muted my-4">
+                    <i class="bi bi-puzzle display-4 mb-3 d-block text-secondary"></i>
+                    No mods installed for this instance.
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover table-borderless align-middle mb-0">
+                        <thead class="border-bottom border-secondary">
+                            <tr>
+                                <th style="width: 50px;">Status</th>
+                                <th>Mod File</th>
+                                <th class="text-end">Size</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var mod in ModFiles)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="form-check form-switch fs-5">
+                                            <input class="form-check-input @(mod.IsEnabled ? "bg-success border-success" : "bg-danger border-danger")" type="checkbox" checked="@mod.IsEnabled" @onchange="@(e => ToggleMod(mod, (bool)(e.Value ?? false)))">
+                                        </div>
+                                    </td>
+                                    <td>
+                                        @if (mod.IsBuiltIn)
+                                        {
+                                            <i class="bi bi-box-seam text-accent me-2"></i>
+                                            <span class="text-white @(mod.IsEnabled ? "" : "text-muted")">@mod.ModName <span class="badge bg-secondary ms-2">Built-in</span></span>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-file-zip text-accent me-2"></i>
+                                            <span class="text-white @(mod.IsEnabled ? "" : "text-muted")">@mod.Name</span>
+                                            
+                                            @if (mod.HasUpdateAvailable)
+                                            {
+                                                <span class="badge bg-primary ms-2" title="Latest: @mod.LatestVersion">Update Available</span>
+                                            }
+                                        }
+                                    </td>
+                                    <td class="text-muted text-end">@(mod.IsBuiltIn ? "-" : FormatBytes(mod.SizeBytes))</td>
+                                    <td class="text-end">
+                                        @if (!mod.IsBuiltIn)
+                                        {
+                                            <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteMod(mod.Name)" title="Delete Mod">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="text-muted small mt-3">
+                    <i class="bi bi-info-circle me-1"></i> Changes to mods require a server restart to take effect.
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private ServerInstance? Instance;
+    private List<ModFileInfo>? ModFiles;
+    private bool IsUploading = false;
+    private bool IsSyncing = false;
+    private bool SyncSuccess = false;
+    private string UploadProgress = "";
+    private string? UploadError;
+    private string? SyncError;
+    private ModList _modList = new ModList();
+
+    private class ModFileInfo
+    {
+        public string Name { get; set; } = "";
+        public string ModName { get; set; } = "";
+        public string CurrentVersion { get; set; } = "";
+        public string LatestVersion { get; set; } = "";
+        public bool HasUpdateAvailable { get; set; }
+        public long SizeBytes { get; set; }
+        public bool IsEnabled { get; set; }
+        public bool IsBuiltIn { get; set; }
+    }
+
+    private bool IsCheckingUpdates = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
+        if (Instance == null)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        LoadMods();
+    }
+
+    private void LoadMods()
+    {
+        try
+        {
+            var modsDir = InstanceManager.GetModsDirectory(Id);
+            if (!Directory.Exists(modsDir))
+            {
+                Directory.CreateDirectory(modsDir);
+            }
+
+            string modListPath = Path.Combine(modsDir, "mod-list.json");
+            if (File.Exists(modListPath))
+            {
+                try
+                {
+                    string json = File.ReadAllText(modListPath);
+                    _modList = JsonSerializer.Deserialize<ModList>(json) ?? new ModList();
+                }
+                catch
+                {
+                    _modList = new ModList();
+                }
+            }
+
+            var dirInfo = new DirectoryInfo(modsDir);
+            ModFiles = dirInfo.GetFiles("*.zip")
+                .Select(f => new ModFileInfo
+                {
+                    Name = f.Name,
+                    ModName = GetModNameFromFilename(f.Name),
+                    CurrentVersion = GetModVersionFromFilename(f.Name),
+                    SizeBytes = f.Length,
+                    IsEnabled = _modList.Mods.FirstOrDefault(m => string.Equals(m.Name, GetModNameFromFilename(f.Name), StringComparison.OrdinalIgnoreCase))?.Enabled ?? false,
+                    IsBuiltIn = false
+                })
+                .ToList();
+
+            foreach (var mod in _modList.Mods)
+            {
+                if (!ModFiles.Any(m => m.ModName.Equals(mod.Name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    ModFiles.Add(new ModFileInfo
+                    {
+                        Name = "(Built-in Factorio Expansion)",
+                        ModName = mod.Name,
+                        SizeBytes = 0,
+                        IsEnabled = mod.Enabled,
+                        IsBuiltIn = true
+                    });
+                }
+            }
+
+            ModFiles = ModFiles.OrderBy(m => m.ModName).ToList();
+        }
+        catch (Exception)
+        {
+            ModFiles = new List<ModFileInfo>();
+        }
+    }
+
+    private string GetModNameFromFilename(string filename)
+    {
+        if (string.IsNullOrEmpty(filename) || !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            return filename;
+
+        // Factorio mod filenames are usually "ModName_1.0.0.zip"
+        var nameWithoutExt = filename.Substring(0, filename.Length - 4);
+        var lastUnderscore = nameWithoutExt.LastIndexOf('_');
+        
+        if (lastUnderscore > 0)
+        {
+            return nameWithoutExt.Substring(0, lastUnderscore);
+        }
+        
+        return nameWithoutExt;
+    }
+
+    private string GetModVersionFromFilename(string filename)
+    {
+        if (string.IsNullOrEmpty(filename) || !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            return "";
+
+        var nameWithoutExt = filename.Substring(0, filename.Length - 4);
+        var lastUnderscore = nameWithoutExt.LastIndexOf('_');
+        
+        if (lastUnderscore > 0 && lastUnderscore < nameWithoutExt.Length - 1)
+        {
+            return nameWithoutExt.Substring(lastUnderscore + 1);
+        }
+        
+        return "";
+    }
+
+    private class FactorioModApiResponse
+    {
+        public List<FactorioModRelease> Releases { get; set; } = new();
+    }
+    
+    private class FactorioModRelease
+    {
+        public string Version { get; set; } = "";
+        public ModInfoJson Info_Json { get; set; } = new();
+    }
+    
+    private class ModInfoJson
+    {
+        public string Factorio_Version { get; set; } = "";
+    }
+
+    private async Task CheckForUpdates()
+    {
+        if (ModFiles == null || !ModFiles.Any()) return;
+        
+        IsCheckingUpdates = true;
+        StateHasChanged();
+        
+        string targetFactorioVersion = "";
+        if (Instance != null && !string.IsNullOrEmpty(Instance.AssignedVersion) && Instance.AssignedVersion != "latest")
+        {
+            var parts = Instance.AssignedVersion.Split('.');
+            if (parts.Length >= 2)
+            {
+                targetFactorioVersion = $"{parts[0]}.{parts[1]}"; // e.g. "1.1" or "2.1"
+            }
+        }
+        
+        try
+        {
+            using var client = new System.Net.Http.HttpClient();
+            
+            foreach (var mod in ModFiles)
+            {
+                if (mod.IsBuiltIn || string.IsNullOrEmpty(mod.CurrentVersion)) continue;
+                
+                try
+                {
+                    var response = await client.GetAsync($"https://mods.factorio.com/api/mods/{mod.ModName}");
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var json = await response.Content.ReadAsStringAsync();
+                        var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                        var modInfo = System.Text.Json.JsonSerializer.Deserialize<FactorioModApiResponse>(json, options);
+                        
+                        if (modInfo != null && modInfo.Releases != null && modInfo.Releases.Any())
+                        {
+                            var validReleases = modInfo.Releases;
+                            
+                            // If we know the exact factorio version (e.g. 1.1), filter out incompatible newer releases
+                            if (!string.IsNullOrEmpty(targetFactorioVersion))
+                            {
+                                var filtered = validReleases.Where(r => r.Info_Json != null && r.Info_Json.Factorio_Version == targetFactorioVersion).ToList();
+                                // Fallback to 2.0 if we are on 2.1 and the mod only advertises 2.0
+                                if (!filtered.Any() && targetFactorioVersion == "2.1")
+                                {
+                                    filtered = validReleases.Where(r => r.Info_Json != null && r.Info_Json.Factorio_Version == "2.0").ToList();
+                                }
+                                
+                                if (filtered.Any())
+                                {
+                                    validReleases = filtered;
+                                }
+                            }
+
+                            var latestRelease = validReleases.LastOrDefault();
+                            if (latestRelease != null && !string.IsNullOrEmpty(latestRelease.Version))
+                            {
+                                mod.LatestVersion = latestRelease.Version;
+                                
+                                if (Version.TryParse(mod.CurrentVersion, out var currentVer) && 
+                                    Version.TryParse(latestRelease.Version, out var latestVer))
+                                {
+                                    mod.HasUpdateAvailable = latestVer > currentVer;
+                                }
+                                else
+                                {
+                                    // Fallback string compare if Version.TryParse fails on strange formats
+                                    mod.HasUpdateAvailable = mod.CurrentVersion != latestRelease.Version;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { } // Ignore individual mod errors so the loop continues
+            }
+        }
+        finally
+        {
+            IsCheckingUpdates = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SaveModListJson()
+    {
+        var modsDir = InstanceManager.GetModsDirectory(Id);
+        string modListPath = Path.Combine(modsDir, "mod-list.json");
+        
+        var options = new JsonSerializerOptions { WriteIndented = true };
+        string json = JsonSerializer.Serialize(_modList, options);
+        File.WriteAllText(modListPath, json);
+    }
+
+    private void ToggleMod(ModFileInfo mod, bool enabled)
+    {
+        mod.IsEnabled = enabled;
+        
+        var entry = _modList.Mods.FirstOrDefault(m => string.Equals(m.Name, mod.ModName, StringComparison.OrdinalIgnoreCase));
+        if (entry != null)
+        {
+            entry.Enabled = enabled;
+        }
+        else
+        {
+            _modList.Mods.Add(new ModEntry { Name = mod.ModName, Enabled = enabled });
+        }
+        
+        SaveModListJson();
+    }
+
+    private async Task UploadModFiles(InputFileChangeEventArgs e)
+    {
+        var files = e.GetMultipleFiles(500); // Allow up to 500 files at once
+        if (!files.Any()) return;
+
+        IsUploading = true;
+        UploadError = null;
+        int completed = 0;
+        int total = files.Count;
+
+        try
+        {
+            var modsDir = InstanceManager.GetModsDirectory(Id);
+            if (!Directory.Exists(modsDir)) Directory.CreateDirectory(modsDir);
+
+            foreach (var file in files)
+            {
+                if (file.Name.Equals("mod-list.json", StringComparison.OrdinalIgnoreCase))
+                {
+                    var modListPath = Path.Combine(modsDir, "mod-list.json");
+                    await using var jsonStream = file.OpenReadStream(2147483648);
+                    await using var jsonFs = new FileStream(modListPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+                    await jsonStream.CopyToAsync(jsonFs);
+                    continue;
+                }
+
+                if (!file.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue; // Skip non-zip files
+                }
+
+                UploadProgress = $"{completed}/{total}";
+                StateHasChanged();
+
+                var path = Path.Combine(modsDir, file.Name);
+
+                // Allow up to 2GB max file size
+                await using var stream = file.OpenReadStream(2147483648);
+                await using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+                await stream.CopyToAsync(fs);
+
+                completed++;
+                
+                // Add to mod-list.json automatically
+                string modName = GetModNameFromFilename(file.Name);
+                if (!_modList.Mods.Any(m => string.Equals(m.Name, modName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _modList.Mods.Add(new ModEntry { Name = modName, Enabled = true });
+                }
+            }
+
+            SaveModListJson();
+            LoadMods();
+        }
+        catch (Exception ex)
+        {
+            UploadError = $"Upload failed: {ex.Message}";
+        }
+        finally
+        {
+            IsUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SyncWithSave()
+    {
+        if (Instance == null) return;
+        
+        IsSyncing = true;
+        SyncError = null;
+        SyncSuccess = false;
+        StateHasChanged();
+
+        try
+        {
+            string targetSave = Instance.ActiveSaveName ?? "";
+            
+            if (string.IsNullOrEmpty(targetSave))
+            {
+                var savesDir = InstanceManager.GetSavesDirectory(Id);
+                if (Directory.Exists(savesDir))
+                {
+                    var dirInfo = new DirectoryInfo(savesDir);
+                    var latest = dirInfo.GetFiles("*.zip").OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
+                    if (latest != null)
+                    {
+                        targetSave = latest.Name;
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(targetSave))
+            {
+                SyncError = "No save files found on the server to sync with.";
+                return;
+            }
+
+            var imageTag = string.IsNullOrWhiteSpace(Instance.AssignedVersion) ? "latest" : Instance.AssignedVersion;
+            var result = await InstanceManager.SyncModsWithSaveAsync(Id, targetSave, imageTag);
+
+            if (result.Success)
+            {
+                // Also manually extract mod-settings.dat since Factorio's native command doesn't do it
+                ExtractModSettingsFromSave(targetSave);
+                
+                SyncSuccess = true;
+                LoadMods(); // Reload the updated mod-list.json
+            }
+            else
+            {
+                SyncError = $"Sync failed. Is the save file from a different Factorio version?\n\nLog Output:\n{result.Logs}";
+            }
+        }
+        catch (Exception ex)
+        {
+            SyncError = $"Error executing sync: {ex.Message}";
+        }
+        finally
+        {
+            IsSyncing = false;
+            StateHasChanged();
+        }
+    }
+
+    private void DeleteMod(string filename)
+    {
+        try
+        {
+            var modsDir = InstanceManager.GetModsDirectory(Id);
+            var path = Path.Combine(modsDir, filename);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                LoadMods();
+            }
+        }
+        catch { }
+    }
+
+    private void ExtractModSettingsFromSave(string saveName)
+    {
+        try
+        {
+            var savePath = Path.Combine(InstanceManager.GetSavesDirectory(Id), saveName);
+            using var archive = System.IO.Compression.ZipFile.OpenRead(savePath);
+            var entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
+            
+            if (entry != null)
+            {
+                var destPath = Path.Combine(InstanceManager.GetModsDirectory(Id), "mod-settings.dat");
+                entry.ExtractToFile(destPath, true);
+            }
+        }
+        catch
+        {
+            // Ignore if the save doesn't have it or extraction fails
+        }
+    }
+
+    private string FormatBytes(long bytes)
+    {
+        string[] suffixes = { "B", "KB", "MB", "GB" };
+        int counter = 0;
+        decimal number = (decimal)bytes;
+        while (Math.Round(number / 1024) >= 1)
+        {
+            number = number / 1024;
+            counter++;
+        }
+        return string.Format("{0:n1} {1}", number, suffixes[counter]);
+    }
+}

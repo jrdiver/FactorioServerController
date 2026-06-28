@@ -23,6 +23,18 @@
                 <i class="bi bi-gear-fill me-2" aria-hidden="true"></i> Settings
             </NavLink>
         </div>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3 mt-4">
+                    <form method="post" action="/api/auth/logout">
+                        <button type="submit" class="nav-link btn btn-link text-danger text-start w-100" style="border: none;">
+                            <i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i> Logout
+                        </button>
+                    </form>
+                </div>
+            </Authorized>
+        </AuthorizeView>
     </nav>
 </div>
  

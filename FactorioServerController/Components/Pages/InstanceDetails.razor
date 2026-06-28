@@ -9,6 +9,22 @@
 @inject InstanceManager InstanceManager
 @inject NavigationManager Navigation
 @inject FactorioWebApi WebApi
+@inject IJSRuntime JSRuntime
+
+<script>
+    window.formatLocalTimes = () => {
+        document.querySelectorAll('.local-time').forEach(el => {
+            const utc = el.getAttribute('data-utc');
+            if (utc) {
+                const date = new Date(utc);
+                el.title = date.toLocaleString(undefined, { 
+                    month: 'short', day: 'numeric', year: 'numeric', 
+                    hour: 'numeric', minute: '2-digit', hour12: true 
+                }) + ' (Local)';
+            }
+        });
+    }
+</script>
 
 <PageTitle>Server Settings - @(Instance?.Name ?? "Loading...")</PageTitle>
 
@@ -102,6 +118,23 @@ else
                             <button type="submit" class="btn btn-glass"><i class="bi bi-save-fill me-2"></i>Save Changes</button>
                         </div>
                     </EditForm>
+                    
+                    <div class="mt-4 pt-4 border-top border-secondary">
+                        <h5 class="text-danger mb-3"><i class="bi bi-exclamation-triangle me-2"></i>Troubleshooting</h5>
+                        <div class="d-flex align-items-center justify-content-between p-3 rounded bg-dark border border-danger border-opacity-50">
+                            <div>
+                                <h6 class="mb-1">Factory Reset Configurations</h6>
+                                <small class="text-muted">Wipes config/ and player-data.json. Use this if the server fails to start after downgrading Factorio versions.</small>
+                            </div>
+                            <button class="btn btn-outline-danger ms-3" @onclick="FactoryResetConfigs">
+                                Reset Configs
+                            </button>
+                        </div>
+                        @if (ShowResetSuccess)
+                        {
+                            <div class="text-success mt-2"><i class="bi bi-check-circle-fill me-2"></i>Configs reset successfully.</div>
+                        }
+                    </div>
                 </div>
 
                 <div class="glass-card mb-4">
@@ -146,6 +179,7 @@ else
                                 <thead class="border-bottom border-secondary">
                                     <tr>
                                         <th class="text-muted">Filename</th>
+                                        <th class="text-muted">Save Version</th>
                                         <th class="text-muted">Last Modified</th>
                                         <th class="text-muted text-end">Size</th>
                                         <th class="text-end">Actions</th>
@@ -159,8 +193,18 @@ else
                                                 <i class="bi bi-file-zip text-accent me-2"></i>
                                                 <span class="text-white">@save.Name</span>
                                             </td>
-                                            <td class="text-muted">
-                                                @save.LastModified.ToString("g")
+                                            <td class="text-secondary">
+                                                @if (string.IsNullOrEmpty(save.SaveVersion))
+                                                {
+                                                    <span class="text-muted">Unknown</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-dark border border-secondary text-light">@save.SaveVersion</span>
+                                                }
+                                            </td>
+                                            <td class="text-muted local-time" data-utc="@save.LastModified.ToString("O")" title="@save.LastModified.ToString("MMM dd, yyyy h:mm tt 'UTC'")">
+                                                @GetFriendlyTime(save.LastModified)
                                                 @if (string.IsNullOrEmpty(Instance?.ActiveSaveName) && save == SaveFiles.First())
                                                 {
                                                     <span class="badge bg-secondary ms-2" title="Will auto-load because it is the newest save">Auto-Active</span>
@@ -193,7 +237,15 @@ else
                             </table>
                         </div>
                         <div class="text-muted small mt-3">
-                            <i class="bi bi-info-circle me-1"></i> The Factorio server automatically loads the most recently modified save file when it starts.
+                            <i class="bi bi-info-circle me-1"></i> 
+                            @if (string.IsNullOrEmpty(Instance?.ActiveSaveName))
+                            {
+                                <span>The Factorio server automatically loads the most recently modified save file when it starts.</span>
+                            }
+                            else
+                            {
+                                <span>The Factorio server is locked to load <strong class="text-white">@Instance.ActiveSaveName</strong> when it starts.</span>
+                            }
                         </div>
                     }
                 </div>
@@ -203,7 +255,7 @@ else
                 <div class="glass-card mb-4">
                     <h4 class="mb-4"><i class="bi bi-info-circle me-2"></i>Quick Actions</h4>
                     <div class="d-grid gap-2">
-                        <button class="btn btn-glass-secondary text-start"><i class="bi bi-puzzle me-2"></i>Manage Mods</button>
+                        <a href="/instance/@Id/mods" class="btn btn-glass-secondary text-start"><i class="bi bi-puzzle me-2"></i>Manage Mods</a>
                         <a href="/instance/@Id/console" class="btn btn-glass-secondary text-start"><i class="bi bi-terminal me-2"></i>Server Console</a>
                         <button class="btn btn-glass-secondary text-start"><i class="bi bi-file-earmark-text me-2"></i>Edit server-settings.json</button>
                         <hr class="border-secondary my-2" />
@@ -222,6 +274,7 @@ else
     private ServerInstance? Instance;
     private List<DockerTagInfo> AvailableVersions = new();
     private bool ShowSaveSuccess = false;
+    private bool ShowResetSuccess = false;
     private List<SaveFileInfo>? SaveFiles;
     private bool IsUploading = false;
     private string? UploadError;
@@ -231,6 +284,7 @@ else
         public string Name { get; set; } = "";
         public DateTime LastModified { get; set; }
         public long SizeBytes { get; set; }
+        public string SaveVersion { get; set; } = "";
     }
 
     protected override async Task OnInitializedAsync()
@@ -260,6 +314,15 @@ else
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try 
+        {
+            await JSRuntime.InvokeVoidAsync("formatLocalTimes");
+        }
+        catch { }
+    }
+
     private async Task SaveChanges()
     {
         if (Instance != null)
@@ -275,6 +338,17 @@ else
             ShowSaveSuccess = false;
             StateHasChanged();
         }
+    }
+
+    private async Task FactoryResetConfigs()
+    {
+        InstanceManager.FactoryResetConfigs(Id);
+        ShowResetSuccess = true;
+        StateHasChanged();
+        
+        await Task.Delay(3000);
+        ShowResetSuccess = false;
+        StateHasChanged();
     }
 
     private async Task StartServer()
@@ -318,8 +392,9 @@ else
                 .Select(f => new SaveFileInfo
                 {
                     Name = f.Name,
-                    LastModified = f.LastWriteTime,
-                    SizeBytes = f.Length
+                    LastModified = f.LastWriteTimeUtc,
+                    SizeBytes = f.Length,
+                    SaveVersion = ExtractSaveVersion(f.FullName)
                 })
                 .OrderByDescending(s => s.LastModified)
                 .ToList();
@@ -413,5 +488,50 @@ else
             Instance.ActiveSaveName = null;
             await SaveChanges();
         }
+    }
+
+    private string GetFriendlyTime(DateTime utcTime)
+    {
+        var timeSpan = DateTime.UtcNow - utcTime;
+
+        if (timeSpan <= TimeSpan.FromSeconds(60))
+            return "Just now";
+        if (timeSpan <= TimeSpan.FromMinutes(60))
+            return timeSpan.Minutes > 1 ? $"{timeSpan.Minutes} mins ago" : "1 min ago";
+        if (timeSpan <= TimeSpan.FromHours(24))
+            return timeSpan.Hours > 1 ? $"{timeSpan.Hours} hours ago" : "1 hour ago";
+        if (timeSpan <= TimeSpan.FromDays(30))
+            return timeSpan.Days > 1 ? $"{timeSpan.Days} days ago" : "Yesterday";
+
+        return utcTime.ToString("MMM dd, yyyy h:mm tt");
+    }
+
+    private string ExtractSaveVersion(string zipPath)
+    {
+        try
+        {
+            using var archive = System.IO.Compression.ZipFile.OpenRead(zipPath);
+            // script.dat and level.dat contain the last saved version. 
+            // For massive multi-part Space Age saves, level.dat is split, so we must check script.dat first.
+            var entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("script.dat", StringComparison.OrdinalIgnoreCase))
+                        ?? archive.Entries.FirstOrDefault(e => e.Name.Equals("level.dat", StringComparison.OrdinalIgnoreCase)) 
+                        ?? archive.Entries.FirstOrDefault(e => e.Name.Equals("level-init.dat", StringComparison.OrdinalIgnoreCase));
+            
+            if (entry != null)
+            {
+                using var stream = entry.Open();
+                using var reader = new System.IO.BinaryReader(stream);
+                ushort major = reader.ReadUInt16();
+                ushort minor = reader.ReadUInt16();
+                ushort patch = reader.ReadUInt16();
+                ushort build = reader.ReadUInt16();
+                return $"{major}.{minor}.{patch}";
+            }
+        }
+        catch
+        {
+            // Ignore extraction errors
+        }
+        return "";
     }
 }

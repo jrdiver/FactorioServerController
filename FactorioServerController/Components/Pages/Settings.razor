@@ -1,7 +1,14 @@
 @page "/settings"
+@using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
 @inject GlobalSettingsService SettingsService
+@inject AppDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserManager<IdentityUser> UserManager
 
 <PageTitle>Global Settings</PageTitle>
 
@@ -47,16 +54,108 @@
                 </div>
             </div>
         </div>
+        
+        <div class="col-lg-4">
+            <div class="glass-card mb-4 border border-primary border-opacity-50">
+                <h4 class="mb-4 text-primary"><i class="bi bi-key-fill me-2"></i>API Access</h4>
+                <p class="text-muted small mb-3">
+                    Use this API Key to download server saves via direct scripts (e.g., curl or wget) by appending <code>?apikey=...</code> to the download URL.
+                </p>
+                
+                @if (string.IsNullOrEmpty(UserApiKey))
+                {
+                    <div class="spinner-border spinner-border-sm text-primary"></div>
+                }
+                else
+                {
+                    <div class="mb-3">
+                        <label class="form-label text-muted">Your API Key</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control bg-dark text-primary font-monospace border-secondary" readonly value="@UserApiKey" id="apiKeyInput" />
+                            <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('apiKeyInput').value)" title="Copy to clipboard">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <button class="btn btn-outline-danger w-100" @onclick="RegenerateApiKey">
+                        <i class="bi bi-arrow-repeat me-2"></i>Regenerate Key
+                    </button>
+                    @if (ShowKeySuccess)
+                    {
+                        <div class="text-success text-center mt-2 small"><i class="bi bi-check-circle-fill me-2"></i>Key regenerated!</div>
+                    }
+                }
+            </div>
+        </div>
     </div>
 </div>
 
 @code {
     private GlobalSettings AppSettings = new();
     private bool ShowSaveSuccess = false;
+    private bool ShowKeySuccess = false;
+    private string UserApiKey = "";
+    private IdentityUser? CurrentUser;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         AppSettings = SettingsService.GetSettings();
+        
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            CurrentUser = await UserManager.GetUserAsync(user);
+            if (CurrentUser != null)
+            {
+                await LoadApiKey();
+            }
+        }
+    }
+
+    private async Task LoadApiKey()
+    {
+        if (CurrentUser == null) return;
+        
+        var keyRecord = await DbContext.UserApiKeys.FirstOrDefaultAsync(k => k.UserId == CurrentUser.Id);
+        if (keyRecord != null)
+        {
+            UserApiKey = keyRecord.ApiKey;
+        }
+        else
+        {
+            // Auto-generate if missing for some reason
+            var newKey = new UserApiKey
+            {
+                UserId = CurrentUser.Id,
+                ApiKey = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N")
+            };
+            DbContext.UserApiKeys.Add(newKey);
+            await DbContext.SaveChangesAsync();
+            UserApiKey = newKey.ApiKey;
+        }
+    }
+
+    private async Task RegenerateApiKey()
+    {
+        if (CurrentUser == null) return;
+        
+        var keyRecord = await DbContext.UserApiKeys.FirstOrDefaultAsync(k => k.UserId == CurrentUser.Id);
+        if (keyRecord != null)
+        {
+            keyRecord.ApiKey = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+            await DbContext.SaveChangesAsync();
+            UserApiKey = keyRecord.ApiKey;
+            
+            ShowKeySuccess = true;
+            StateHasChanged();
+            
+            await Task.Delay(3000);
+            ShowKeySuccess = false;
+            StateHasChanged();
+        }
     }
 
     private async Task SaveSettings()
