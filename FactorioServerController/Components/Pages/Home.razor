@@ -13,6 +13,8 @@
 @inject FactorioWebApi WebApi
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<IdentityUser> UserManager
+@inject IJSRuntime JSRuntime
+@implements IDisposable
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -77,8 +79,25 @@
                         <div class="d-flex gap-2 mt-auto">
                             @if (isRunning)
                             {
-                                <button class="btn btn-glass-secondary flex-grow-1 text-danger" @onclick="() => StopInstance(instance.Id)">
-                                    <i class="bi bi-stop-fill me-1"></i> Stop
+                                @if (_stoppingInstances.Contains(instance.Id))
+                                {
+                                    <button class="btn btn-glass-secondary flex-grow-1 text-danger" disabled>
+                                        <span class="spinner-border spinner-border-sm me-1"></span> Stopping...
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-glass-secondary flex-grow-1 text-danger" @onclick="() => StopInstance(instance.Id)">
+                                        <i class="bi bi-stop-fill me-1"></i> Stop
+                                    </button>
+                                }
+                            }
+                            else
+                            {
+                            @if (_startingInstances.Contains(instance.Id))
+                            {
+                                <button class="btn btn-glass flex-grow-1" disabled>
+                                    <span class="spinner-border spinner-border-sm me-1"></span> Starting...
                                 </button>
                             }
                             else
@@ -86,6 +105,7 @@
                                 <button class="btn btn-glass flex-grow-1" @onclick="() => StartInstance(instance)">
                                     <i class="bi bi-play-fill me-1"></i> Start
                                 </button>
+                            }
                             }
                             <a href="/instance/@instance.Id/console" class="btn btn-glass-secondary text-accent" title="Server Console">
                                 <i class="bi bi-terminal-fill"></i>
@@ -102,10 +122,38 @@
 @code {
     private List<ServerInstance>? Instances;
     private List<DockerTagInfo> AvailableVersions = new();
+    private HashSet<int> _startingInstances = new();
+    private HashSet<int> _stoppingInstances = new();
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource _cts = new();
 
     protected override async Task OnInitializedAsync()
     {
         await LoadInstances();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        _ = PollStatusAsync();
+    }
+
+    private async Task PollStatusAsync()
+    {
+        try
+        {
+            while (await _timer!.WaitForNextTickAsync(_cts.Token))
+            {
+                bool isHidden = false;
+                try
+                {
+                    isHidden = await JSRuntime.InvokeAsync<bool>("eval", "document.hidden");
+                }
+                catch { }
+
+                if (!isHidden)
+                {
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private async Task LoadInstances()
@@ -158,13 +206,23 @@
 
     private async Task StartInstance(ServerInstance instance)
     {
+        _startingInstances.Add(instance.Id);
+        StateHasChanged();
+        
         await InstanceManager.StartInstanceAsync(instance);
+        
+        _startingInstances.Remove(instance.Id);
         StateHasChanged();
     }
 
     private async Task StopInstance(int instanceId)
     {
+        _stoppingInstances.Add(instanceId);
+        StateHasChanged();
+        
         await InstanceManager.StopInstanceAsync(instanceId);
+        
+        _stoppingInstances.Remove(instanceId);
         StateHasChanged();
     }
 
@@ -182,5 +240,12 @@
         await DbContext.SaveChangesAsync();
         
         Navigation.NavigateTo($"/instance/{newInstance.Id}");
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _timer?.Dispose();
     }
 }

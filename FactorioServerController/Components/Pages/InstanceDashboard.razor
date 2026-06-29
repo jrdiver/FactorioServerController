@@ -4,6 +4,7 @@
 @using Microsoft.EntityFrameworkCore
 @inject InstanceManager InstanceManager
 @inject AppDbContext DbContext
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 
 <div class="glass-card mb-4">
@@ -43,6 +44,7 @@
                     <div class="progress bg-secondary" style="height: 10px;">
                         <div class="progress-bar @(Stats.CpuPercentage > 80 ? "bg-danger" : "bg-primary")" role="progressbar" style="width: @(Math.Min(100, Stats.CpuPercentage))%"></div>
                     </div>
+                    <small class="text-muted mt-2 d-block">(100% = 1 CPU Core)</small>
                 </div>
             </div>
 
@@ -114,7 +116,14 @@
         {
             while (await _timer!.WaitForNextTickAsync(_cts.Token))
             {
-                if (Instance != null)
+                bool isHidden = false;
+                try
+                {
+                    isHidden = await JSRuntime.InvokeAsync<bool>("eval", "document.hidden");
+                }
+                catch { }
+
+                if (!isHidden && Instance != null)
                 {
                     Stats = await InstanceManager.GetLiveStatsAsync(Instance);
                     await InvokeAsync(StateHasChanged);

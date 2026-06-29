@@ -14,6 +14,7 @@
 @inject IJSRuntime JSRuntime
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<IdentityUser> UserManager
+@implements IDisposable
 
 <script>
     window.formatLocalTimes = () => {
@@ -57,7 +58,18 @@ else
             <div class="d-flex gap-2">
                 @if (isRunning)
                 {
-                    <button class="btn btn-glass-secondary text-danger" @onclick="StopServer"><i class="bi bi-stop-fill me-2"></i>Stop Server</button>
+                    @if (IsStopping)
+                    {
+                        <button class="btn btn-glass-secondary text-danger" disabled><span class="spinner-border spinner-border-sm me-2"></span>Stopping...</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-glass-secondary text-danger" @onclick="StopServer"><i class="bi bi-stop-fill me-2"></i>Stop Server</button>
+                    }
+                }
+                else if (IsStarting)
+                {
+                    <button class="btn btn-glass" disabled><span class="spinner-border spinner-border-sm me-2"></span>Starting...</button>
                 }
                 else
                 {
@@ -343,6 +355,9 @@ else
     private List<DockerTagInfo> AvailableVersions = new();
     private bool ShowSaveSuccess = false;
     private List<SaveFileInfo>? SaveFiles;
+    private bool HasUpdateAvailable = false;
+    private bool IsStarting = false;
+    private bool IsStopping = false;
     private bool IsUploading = false;
     private string? UploadError;
     private bool ShowDeleteConfirmation = false;
@@ -357,6 +372,9 @@ else
         public long SizeBytes { get; set; }
         public string SaveVersion { get; set; } = "";
     }
+
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource _cts = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -403,6 +421,31 @@ else
                 new("2.0", "2.0") 
             };
         }
+
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        _ = PollStatusAsync();
+    }
+
+    private async Task PollStatusAsync()
+    {
+        try
+        {
+            while (await _timer!.WaitForNextTickAsync(_cts.Token))
+            {
+                bool isHidden = false;
+                try
+                {
+                    isHidden = await JSRuntime.InvokeAsync<bool>("eval", "document.hidden");
+                }
+                catch { }
+
+                if (!isHidden)
+                {
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -454,13 +497,25 @@ else
     {
         if (Instance != null)
         {
+            IsStarting = true;
+            StateHasChanged();
+            
             await InstanceManager.StartInstanceAsync(Instance);
+            
+            IsStarting = false;
+            StateHasChanged();
         }
     }
 
     private async Task StopServer()
     {
+        IsStopping = true;
+        StateHasChanged();
+        
         await InstanceManager.StopInstanceAsync(Id);
+        
+        IsStopping = false;
+        StateHasChanged();
     }
 
     private void PromptDeleteServer()
@@ -646,5 +701,12 @@ else
             // Ignore extraction errors
         }
         return "";
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _timer?.Dispose();
     }
 }

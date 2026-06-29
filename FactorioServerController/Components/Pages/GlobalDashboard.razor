@@ -1,0 +1,237 @@
+@page "/status"
+@using FactorioLibrary.Models
+@using FactorioLibrary.Services
+@using FactorioLibrary.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject InstanceManager InstanceManager
+@inject AppDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserManager<IdentityUser> UserManager
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<PageTitle>Fleet Status</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="row mb-4 align-items-center">
+        <div class="col">
+            <h1 class="display-5 text-accent mb-0"><i class="bi bi-activity me-2"></i>Fleet Status</h1>
+            <p class="text-muted mt-2">Aggregated resource usage across all your running servers</p>
+        </div>
+    </div>
+
+    @if (Instances == null)
+    {
+        <div class="d-flex justify-content-center mt-5">
+            <div class="spinner-border text-accent" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="glass-card mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4><i class="bi bi-hdd-network me-2"></i>Global Resources</h4>
+                @if (OnlineCount > 0)
+                {
+                    <span class="badge bg-success">@OnlineCount / @Instances.Count Online</span>
+                }
+                else
+                {
+                    <span class="badge bg-secondary">0 / @Instances.Count Online</span>
+                }
+            </div>
+
+            @if (OnlineCount == 0)
+            {
+                <div class="alert alert-secondary bg-dark border-secondary">
+                    <i class="bi bi-info-circle me-2"></i> No servers are currently running.
+                </div>
+            }
+            else
+            {
+                <div class="row g-4 mb-4">
+                    <!-- CPU Gauge -->
+                    <div class="col-md-6">
+                        <div class="p-3 rounded bg-dark border border-secondary text-center h-100">
+                            <h6 class="text-muted mb-3"><i class="bi bi-cpu me-2"></i>Total CPU Usage</h6>
+                            <h2 class="text-white mb-3">@TotalCpu.ToString("F1")%</h2>
+                            <div class="progress bg-secondary" style="height: 10px;">
+                                <div class="progress-bar @(TotalCpu > (OnlineCount * 80) ? "bg-danger" : "bg-primary")" role="progressbar" style="width: @(Math.Min(100, TotalCpu / Math.Max(1, OnlineCount)))%"></div>
+                            </div>
+                            <small class="text-muted mt-2 d-block">Across @OnlineCount containers<br/>(100% = 1 CPU Core)</small>
+                        </div>
+                    </div>
+
+                    <!-- RAM Gauge -->
+                    <div class="col-md-6">
+                        <div class="p-3 rounded bg-dark border border-secondary text-center h-100">
+                            <h6 class="text-muted mb-3"><i class="bi bi-memory me-2"></i>Total Memory Usage</h6>
+                            <h2 class="text-white mb-3">@TotalRamMb.ToString("F0") MB</h2>
+                            <div class="progress bg-secondary" style="height: 10px;">
+                                <div class="progress-bar bg-info" role="progressbar" style="width: @(TotalLimitMb > 0 ? Math.Min(100, (TotalRamMb / TotalLimitMb) * 100) : 0)%"></div>
+                            </div>
+                            <small class="text-muted mt-2 d-block">Out of @TotalLimitMb.ToString("F0") MB allocated limit</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Online Players -->
+                <div class="p-4 rounded bg-dark border border-secondary">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="m-0"><i class="bi bi-people-fill me-2"></i>Total Online Players (@TotalPlayers)</h5>
+                    </div>
+                    
+                    @if (AllPlayers.Any())
+                    {
+                        <ul class="list-group list-group-flush bg-transparent">
+                            @foreach (var player in AllPlayers)
+                            {
+                                <li class="list-group-item bg-transparent text-white border-secondary px-0">
+                                    <i class="bi bi-person me-2 text-primary"></i>@player
+                                </li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <p class="text-muted m-0 fst-italic">No players currently connected to any server.</p>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<ServerInstance>? Instances;
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource _cts = new();
+
+    private int OnlineCount = 0;
+    private double TotalCpu = 0;
+    private double TotalRamMb = 0;
+    private double TotalLimitMb = 0;
+    private int TotalPlayers = 0;
+    private List<string> AllPlayers = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInstances();
+        
+        if (Instances != null && Instances.Any())
+        {
+            await FetchGlobalStatsAsync();
+            
+            _timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+            _ = PollStatsAsync();
+        }
+    }
+
+    private async Task LoadInstances()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        
+        if (user == null)
+        {
+            Instances = new();
+            return;
+        }
+
+        bool isAdmin = await UserManager.IsInRoleAsync(user, "Administrator");
+
+        if (isAdmin)
+        {
+            Instances = await DbContext.ServerInstances.ToListAsync();
+        }
+        else
+        {
+            var allowedServerIds = await DbContext.UserServerAccesses
+                .Where(usa => usa.UserId == user.Id)
+                .Select(usa => usa.ServerInstanceId)
+                .ToListAsync();
+                
+            Instances = await DbContext.ServerInstances
+                .Where(s => allowedServerIds.Contains(s.Id))
+                .ToListAsync();
+        }
+    }
+
+    private async Task FetchGlobalStatsAsync()
+    {
+        if (Instances == null) return;
+
+        int online = 0;
+        double cpu = 0;
+        double ram = 0;
+        double limit = 0;
+        var players = new List<string>();
+
+        foreach (var instance in Instances)
+        {
+            if (InstanceManager.IsRunning(instance.Id))
+            {
+                var stats = await InstanceManager.GetLiveStatsAsync(instance);
+                if (stats.IsOnline)
+                {
+                    online++;
+                    cpu += stats.CpuPercentage;
+                    ram += stats.RamUsageMb;
+                    limit += stats.RamLimitMb > 0 ? stats.RamLimitMb : stats.RamUsageMb; // Fallback if no limit
+                    
+                    if (stats.OnlinePlayers != null)
+                    {
+                        foreach(var p in stats.OnlinePlayers)
+                        {
+                            players.Add($"{p} (Server: {instance.Name})");
+                        }
+                    }
+                }
+            }
+        }
+
+        OnlineCount = online;
+        TotalCpu = cpu;
+        TotalRamMb = ram;
+        TotalLimitMb = limit;
+        AllPlayers = players;
+        TotalPlayers = players.Count;
+    }
+
+    private async Task PollStatsAsync()
+    {
+        try
+        {
+            while (await _timer!.WaitForNextTickAsync(_cts.Token))
+            {
+                bool isHidden = false;
+                try
+                {
+                    isHidden = await JSRuntime.InvokeAsync<bool>("eval", "document.hidden");
+                }
+                catch { }
+
+                if (!isHidden)
+                {
+                    await FetchGlobalStatsAsync();
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Disposed
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _timer?.Dispose();
+    }
+}

@@ -66,6 +66,19 @@ else
                             <i class="bi bi-arrow-repeat me-2"></i><span>Sync from Save</span>
                         }
                     </button>
+                    @if (ModFiles?.Any(m => m.HasUpdateAvailable && !m.IsIgnored) == true)
+                    {
+                        <button class="btn btn-glass me-3" @onclick="UpdateAllMods" disabled="@IsUpdating">
+                            @if (IsUpdating)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span><span>Updating...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-cloud-download me-2"></i><span>Update All</span>
+                            }
+                        </button>
+                    }
 
                     <InputFile OnChange="UploadModFiles" class="d-none" id="modUpload" accept=".zip,.json" multiple />
                     <button class="btn btn-glass" type="button" onclick="document.getElementById('modUpload').click()" disabled="@IsUploading">
@@ -93,6 +106,14 @@ else
             @if (SyncSuccess)
             {
                 <div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>Successfully synced mod configuration with the active save file!</div>
+            }
+            @if (!string.IsNullOrEmpty(UpdateError))
+            {
+                <div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>@UpdateError</div>
+            }
+            @if (!string.IsNullOrEmpty(UpdateSuccess))
+            {
+                <div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>@UpdateSuccess</div>
             }
 
             @if (ModFiles == null)
@@ -123,8 +144,16 @@ else
                             {
                                 <tr>
                                     <td>
-                                        <div class="form-check form-switch fs-5">
-                                            <input class="form-check-input @(mod.IsEnabled ? "bg-success border-success" : "bg-danger border-danger")" type="checkbox" checked="@mod.IsEnabled" @onchange="@(e => ToggleMod(mod, (bool)(e.Value ?? false)))">
+                                        <div class="d-flex align-items-center">
+                                            <div class="form-check form-switch fs-5 mb-0 me-2">
+                                                <input class="form-check-input @(mod.IsEnabled ? "bg-success border-success" : "bg-danger border-danger")" type="checkbox" checked="@mod.IsEnabled" @onchange="@(e => ToggleMod(mod, (bool)(e.Value ?? false)))">
+                                            </div>
+                                            @if (!mod.IsBuiltIn)
+                                            {
+                                                <button class="btn btn-sm btn-link p-0 text-@(mod.IsIgnored ? "warning" : "secondary")" @onclick="() => TogglePin(mod)" title="@(mod.IsIgnored ? "Unpin Mod" : "Pin Mod (Prevent Updates)")">
+                                                    <i class="bi @(mod.IsIgnored ? "bi-pin-angle-fill" : "bi-pin-angle") fs-5"></i>
+                                                </button>
+                                            }
                                         </div>
                                     </td>
                                     <td>
@@ -136,11 +165,15 @@ else
                                         else
                                         {
                                             <i class="bi bi-file-zip text-accent me-2"></i>
-                                            <span class="text-white @(mod.IsEnabled ? "" : "text-muted")">@mod.Name</span>
+                                            <span class="text-white @(mod.IsEnabled ? "" : "text-muted") @(mod.IsIgnored ? "text-warning" : "")">@mod.Name</span>
                                             
-                                            @if (mod.HasUpdateAvailable)
+                                            @if (mod.HasUpdateAvailable && !mod.IsIgnored)
                                             {
                                                 <span class="badge bg-primary ms-2" title="Latest: @mod.LatestVersion">Update Available</span>
+                                            }
+                                            else if (mod.IsIgnored)
+                                            {
+                                                <span class="badge bg-warning text-dark ms-2">Pinned</span>
                                             }
                                         }
                                     </td>
@@ -148,6 +181,12 @@ else
                                     <td class="text-end">
                                         @if (!mod.IsBuiltIn)
                                         {
+                                            @if (mod.HasUpdateAvailable && !mod.IsIgnored)
+                                            {
+                                                <button class="btn btn-sm btn-primary me-2" @onclick="() => UpdateMod(mod)" disabled="@IsUpdating" title="Update to @mod.LatestVersion">
+                                                    <i class="bi bi-cloud-download"></i>
+                                                </button>
+                                            }
                                             <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteMod(mod.Name)" title="Delete Mod">
                                                 <i class="bi bi-trash"></i>
                                             </button>
@@ -186,13 +225,19 @@ else
         public string ModName { get; set; } = "";
         public string CurrentVersion { get; set; } = "";
         public string LatestVersion { get; set; } = "";
+        public string DownloadUrl { get; set; } = "";
+        public string NewFileName { get; set; } = "";
         public bool HasUpdateAvailable { get; set; }
         public long SizeBytes { get; set; }
         public bool IsEnabled { get; set; }
         public bool IsBuiltIn { get; set; }
+        public bool IsIgnored { get; set; }
     }
 
     private bool IsCheckingUpdates = false;
+    private bool IsUpdating = false;
+    private string? UpdateError;
+    private string? UpdateSuccess;
 
     protected override async Task OnInitializedAsync()
     {
@@ -259,7 +304,8 @@ else
                     CurrentVersion = GetModVersionFromFilename(f.Name),
                     SizeBytes = f.Length,
                     IsEnabled = _modList.Mods.FirstOrDefault(m => string.Equals(m.Name, GetModNameFromFilename(f.Name), StringComparison.OrdinalIgnoreCase))?.Enabled ?? false,
-                    IsBuiltIn = false
+                    IsBuiltIn = false,
+                    IsIgnored = Instance.IgnoredMods.Contains(GetModNameFromFilename(f.Name))
                 })
                 .ToList();
 
@@ -327,6 +373,8 @@ else
     private class FactorioModRelease
     {
         public string Version { get; set; } = "";
+        public string Download_Url { get; set; } = "";
+        public string File_Name { get; set; } = "";
         public ModInfoJson Info_Json { get; set; } = new();
     }
     
@@ -393,6 +441,8 @@ else
                             if (latestRelease != null && !string.IsNullOrEmpty(latestRelease.Version))
                             {
                                 mod.LatestVersion = latestRelease.Version;
+                                mod.DownloadUrl = latestRelease.Download_Url;
+                                mod.NewFileName = latestRelease.File_Name;
                                 
                                 if (Version.TryParse(mod.CurrentVersion, out var currentVer) && 
                                     Version.TryParse(latestRelease.Version, out var latestVer))
@@ -428,6 +478,26 @@ else
         File.WriteAllText(modListPath, json);
     }
 
+    private async Task TogglePin(ModFileInfo mod)
+    {
+        if (Instance == null) return;
+        
+        mod.IsIgnored = !mod.IsIgnored;
+        
+        if (mod.IsIgnored && !Instance.IgnoredMods.Contains(mod.ModName))
+        {
+            Instance.IgnoredMods.Add(mod.ModName);
+        }
+        else if (!mod.IsIgnored)
+        {
+            Instance.IgnoredMods.Remove(mod.ModName);
+        }
+        
+        DbContext.ServerInstances.Update(Instance);
+        await DbContext.SaveChangesAsync();
+        StateHasChanged();
+    }
+
     private void ToggleMod(ModFileInfo mod, bool enabled)
     {
         mod.IsEnabled = enabled;
@@ -443,6 +513,66 @@ else
         }
         
         SaveModListJson();
+    }
+
+    private async Task UpdateMod(ModFileInfo mod)
+    {
+        if (Instance == null || string.IsNullOrEmpty(mod.DownloadUrl)) return;
+        
+        IsUpdating = true;
+        UpdateError = null;
+        UpdateSuccess = null;
+        StateHasChanged();
+        
+        var result = await ModManager.UpdateModAsync(Id, mod.ModName, mod.DownloadUrl, mod.NewFileName, mod.Name);
+        if (result.success)
+        {
+            UpdateSuccess = $"Successfully updated {mod.ModName} to {mod.LatestVersion}";
+            LoadMods();
+        }
+        else
+        {
+            UpdateError = $"Failed to update {mod.ModName}: {result.error}";
+        }
+        
+        IsUpdating = false;
+        StateHasChanged();
+    }
+
+    private async Task UpdateAllMods()
+    {
+        if (Instance == null || ModFiles == null) return;
+        
+        var updatable = ModFiles.Where(m => m.HasUpdateAvailable && !m.IsIgnored && !m.IsBuiltIn).ToList();
+        if (!updatable.Any()) return;
+        
+        IsUpdating = true;
+        UpdateError = null;
+        UpdateSuccess = null;
+        StateHasChanged();
+        
+        int successCount = 0;
+        foreach (var mod in updatable)
+        {
+            if (string.IsNullOrEmpty(mod.DownloadUrl)) continue;
+            
+            var result = await ModManager.UpdateModAsync(Id, mod.ModName, mod.DownloadUrl, mod.NewFileName, mod.Name);
+            if (result.success) successCount++;
+            else
+            {
+                UpdateError = $"Failed on {mod.ModName}: {result.error}";
+                break; // stop on first error
+            }
+        }
+        
+        if (successCount > 0)
+        {
+            UpdateSuccess = $"Successfully updated {successCount} mods!";
+            LoadMods();
+        }
+        
+        IsUpdating = false;
+        StateHasChanged();
     }
 
     private async Task UploadModFiles(InputFileChangeEventArgs e)

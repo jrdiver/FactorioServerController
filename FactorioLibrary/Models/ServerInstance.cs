@@ -26,4 +26,6 @@ public class ServerInstance
     public int MaxPlayers { get; set; } = 0; // 0 means unlimited
 
     public string? Description { get; set; }
+
+    public List<string> IgnoredMods { get; set; } = new();
 }

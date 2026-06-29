@@ -19,6 +19,9 @@ public class InstanceManager
     
     // Maps instance ID to Docker Container ID
     private readonly ConcurrentDictionary<int, string> _runningContainers = new();
+    
+    // Cache stats for 2.5 seconds to prevent multiple clients from hammering Docker API
+    private readonly ConcurrentDictionary<int, (DateTime FetchedAt, ServerStats Stats)> _statsCache = new();
 
     public InstanceManager(IConfiguration configuration, RconService rconService)
     {
@@ -399,6 +402,11 @@ public class InstanceManager
 
     public async Task<ServerStats> GetLiveStatsAsync(ServerInstance instance)
     {
+        if (_statsCache.TryGetValue(instance.Id, out var cached) && (DateTime.UtcNow - cached.FetchedAt).TotalSeconds < 2.5)
+        {
+            return cached.Stats;
+        }
+
         var stats = new ServerStats { IsOnline = false };
 
         if (_runningContainers.TryGetValue(instance.Id, out string? containerId))
@@ -463,6 +471,7 @@ public class InstanceManager
             }
         }
 
+        _statsCache[instance.Id] = (DateTime.UtcNow, stats);
         return stats;
     }
 
