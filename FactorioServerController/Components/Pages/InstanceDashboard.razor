@@ -20,11 +20,11 @@
         }
     </div>
 
-    @if (Instance == null)
+    @if (Instance == null || _isLoadingStats)
     {
         <div class="text-center py-5">
             <div class="spinner-border text-primary" role="status"></div>
-            <p class="mt-3 text-muted">Loading server data...</p>
+            <p class="mt-3 text-muted">Loading live stats...</p>
         </div>
     }
     else if (Stats == null || !Stats.IsOnline)
@@ -94,6 +94,7 @@
     private ServerStats? Stats;
     private PeriodicTimer? _timer;
     private CancellationTokenSource _cts = new();
+    private bool _isLoadingStats = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -103,6 +104,7 @@
         {
             // Initial fetch
             Stats = await InstanceManager.GetLiveStatsAsync(Instance);
+            _isLoadingStats = false;
             
             // Start polling loop
             _timer = new PeriodicTimer(TimeSpan.FromSeconds(3));

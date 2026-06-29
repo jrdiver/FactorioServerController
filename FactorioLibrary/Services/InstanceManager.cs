@@ -382,7 +382,7 @@ public class InstanceManager
                 // 1. Get Docker Stats
                 ContainerStatsParameters param = new() { Stream = false };
                 ContainerStatsResponse? lastStats = null;
-                Progress<ContainerStatsResponse> progress = new(msg => lastStats = msg);
+                SyncProgress<ContainerStatsResponse> progress = new(msg => lastStats = msg);
                 await _dockerClient.Containers.GetContainerStatsAsync(containerId, param, progress, CancellationToken.None);
 
                 if (lastStats != null)
@@ -435,8 +435,16 @@ public class InstanceManager
     public string GetConfigDirectory(int instanceId)
     {
         string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
-        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? $"/factorio/{instanceId}" : instanceHostPath;
-
+        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
+            ? $"/factorio/{instanceId}" 
+            : instanceHostPath;
+            
         return Path.Combine(localDataPath, "config");
     }
+}
+
+public class SyncProgress<T>(Action<T> handler) : IProgress<T>
+{
+    private readonly Action<T> _handler = handler;
+    public void Report(T value) => _handler(value);
 }
