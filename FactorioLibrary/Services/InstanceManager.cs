@@ -69,13 +69,17 @@ public class InstanceManager
 
         try
         {
+            Console.WriteLine($"[Instance {instance.Id}] Starting instance. Target Image: {image}");
+
             // 1. Ensure the image is pulled
+            Console.WriteLine($"[Instance {instance.Id}] Ensuring image is pulled...");
             await _dockerClient.Images.CreateImageAsync(
                 new ImagesCreateParameters { FromImage = image }, 
                 null, 
                 new Progress<JSONMessage>());
 
             // 2. Remove existing container with the same name if it exists (but is stopped)
+            Console.WriteLine($"[Instance {instance.Id}] Checking for existing containers named {containerName}...");
             var existingContainers = await _dockerClient.Containers.ListContainersAsync(
                 new ContainersListParameters { All = true });
                 
@@ -85,11 +89,12 @@ public class InstanceManager
                 {
                     if (c.State != "running")
                     {
+                        Console.WriteLine($"[Instance {instance.Id}] Found stopped container {c.ID}. Removing it...");
                         await _dockerClient.Containers.RemoveContainerAsync(c.ID, new ContainerRemoveParameters { Force = true });
                     }
                     else
                     {
-                        // Already actually running in Docker
+                        Console.WriteLine($"[Instance {instance.Id}] Container {c.ID} is already running.");
                         _runningContainers.TryAdd(instance.Id, c.ID);
                         return true;
                     }
@@ -98,6 +103,7 @@ public class InstanceManager
 
             // 3. Create host directory path for this specific instance
             string instanceHostPath = $"{_hostBaseMountPath.TrimEnd('/', '\\')}/{instance.Id}";
+            Console.WriteLine($"[Instance {instance.Id}] Host Mount Path configured as: {instanceHostPath}");
             
             // Note: Docker will automatically create the host directory if it doesn't exist when the volume is mounted,
             // but we MUST write the rconpw file before starting because factoriotools/factorio does not use env vars for it!
@@ -151,6 +157,8 @@ public class InstanceManager
                 envVars.Add($"SAVE_NAME={saveNameWithoutExtension}");
             }
 
+            Console.WriteLine($"[Instance {instance.Id}] Creating Docker container {containerName} with Port: {instance.Port}, RconPort: {instance.RconPort}...");
+            
             var response = await _dockerClient.Containers.CreateContainerAsync(new CreateContainerParameters
             {
                 Image = image,
@@ -171,19 +179,24 @@ public class InstanceManager
             });
 
             // 5. Start the container
+            Console.WriteLine($"[Instance {instance.Id}] Starting Docker container {response.ID}...");
             bool started = await _dockerClient.Containers.StartContainerAsync(response.ID, null);
             
             if (started)
             {
+                Console.WriteLine($"[Instance {instance.Id}] Successfully started!");
                 _runningContainers.TryAdd(instance.Id, response.ID);
                 return true;
             }
             
+            Console.WriteLine($"[Instance {instance.Id}] Docker reported the container did not start successfully.");
             return false;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error starting container: {ex.Message}");
+            Console.WriteLine($"[Instance {instance.Id}] FATAL ERROR during startup: {ex.GetType().Name}");
+            Console.WriteLine($"[Instance {instance.Id}] Message: {ex.Message}");
+            Console.WriteLine($"[Instance {instance.Id}] Stack Trace: {ex.StackTrace}");
             return false;
         }
     }

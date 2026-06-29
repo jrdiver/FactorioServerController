@@ -7,20 +7,25 @@ using FactorioLibrary.Services;
 using FactorioServerController.Components;
 using FactorioServerController.Components.Endpoints;
 using FactorioServerController.Auth;
+using Microsoft.AspNetCore.HttpOverrides;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=factorio_manager.db"));
+// Ensure data directory exists for persistent storage
+var dataDir = Path.Combine(Directory.GetCurrentDirectory(), "data");
+if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
 
-var dataProtectionPath = builder.Configuration["DataProtection:KeyPath"];
-if (!string.IsNullOrEmpty(dataProtectionPath))
-{
-    builder.Services.AddDataProtection()
-        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
-        .SetApplicationName("FactorioServerController");
-}
+// Add services to the container.
+var defaultDb = $"Data Source={Path.Combine(dataDir, "factorio_manager.db")}";
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? defaultDb));
+
+var defaultKeyPath = Path.Combine(dataDir, "keys");
+var dataProtectionPath = builder.Configuration["DataProtection:KeyPath"] ?? defaultKeyPath;
+
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
+    .SetApplicationName("FactorioServerController");
 
 builder.Services.AddAuthentication(options =>
     {
@@ -56,7 +61,7 @@ builder.Services.AddIdentityCore<IdentityUser>(options =>
     .AddDefaultTokenProviders();
 
 // Register Factorio Core Services
-var settingsPath = builder.Configuration["GlobalSettings:Path"] ?? "settings.json";
+var settingsPath = builder.Configuration["GlobalSettings:Path"] ?? Path.Combine(dataDir, "settings.json");
 builder.Services.AddSingleton<GlobalSettingsService>(sp => new GlobalSettingsService(settingsPath));
 builder.Services.AddSingleton<FactorioWebApi>(sp => new FactorioWebApi(new FactorioLibrary.Objects.FactorioCredentials(), sp.GetRequiredService<GlobalSettingsService>()));
 builder.Services.AddSingleton<VersionManager>();
@@ -104,6 +109,11 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -111,7 +121,6 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();

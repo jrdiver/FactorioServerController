@@ -6,7 +6,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <UserSecretsId>c1baddf1-ebba-45a1-a526-5ec3a91d4448</UserSecretsId>
-    <ContainerRepository>jrdiver/factorioservercontroller</ContainerRepository>
     <DockerfileContext>..\.</DockerfileContext>
   </PropertyGroup>
 
