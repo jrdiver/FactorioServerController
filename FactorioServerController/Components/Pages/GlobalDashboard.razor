@@ -88,7 +88,7 @@
                     @if (AllPlayers.Any())
                     {
                         <ul class="list-group list-group-flush bg-transparent">
-                            @foreach (var player in AllPlayers)
+                            @foreach (string player in AllPlayers)
                             {
                                 <li class="list-group-item bg-transparent text-white border-secondary px-0">
                                     <i class="bi bi-person me-2 text-primary"></i>@player
@@ -133,8 +133,8 @@
 
     private async Task LoadInstances()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
+        AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        IdentityUser? user = await UserManager.GetUserAsync(authState.User);
         
         if (user == null)
         {
@@ -150,7 +150,7 @@
         }
         else
         {
-            var allowedServerIds = await DbContext.UserServerAccesses
+            List<int> allowedServerIds = await DbContext.UserServerAccesses
                 .Where(usa => usa.UserId == user.Id)
                 .Select(usa => usa.ServerInstanceId)
                 .ToListAsync();
@@ -169,9 +169,9 @@
         double cpu = 0;
         double ram = 0;
         double limit = 0;
-        var players = new List<string>();
+        List<string> players = [];
 
-        foreach (var instance in Instances)
+        foreach (ServerInstance instance in Instances)
         {
             if (InstanceManager.IsRunning(instance.Id))
             {
@@ -185,7 +185,7 @@
                     
                     if (stats.OnlinePlayers != null)
                     {
-                        foreach(var p in stats.OnlinePlayers)
+                        foreach (string p in stats.OnlinePlayers)
                         {
                             players.Add($"{p} (Server: {instance.Name})");
                         }

@@ -1,48 +1,34 @@
-using System;
-using System.IO;
 using System.Text.Json;
-using System.Threading.Tasks;
 using FactorioLibrary.Models;
 
 namespace FactorioLibrary.Services;
 
-public class GlobalSettingsService
+public class GlobalSettingsService(string settingsFilePath = "settings.json")
 {
-    private readonly string _settingsFilePath;
-    private GlobalSettings _cachedSettings;
+    private GlobalSettings _cachedSettings = LoadSettingsSync(settingsFilePath);
 
-    public GlobalSettingsService(string settingsFilePath = "settings.json")
-    {
-        _settingsFilePath = settingsFilePath;
-        _cachedSettings = LoadSettingsSync();
-    }
-
-    public GlobalSettings GetSettings()
-    {
-        return _cachedSettings;
-    }
+    public GlobalSettings GetSettings() => _cachedSettings;
 
     public async Task SaveSettingsAsync(GlobalSettings settings)
     {
         _cachedSettings = settings;
         string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(_settingsFilePath, json);
+        await File.WriteAllTextAsync(settingsFilePath, json);
     }
 
-    private GlobalSettings LoadSettingsSync()
+    private static GlobalSettings LoadSettingsSync(string path)
     {
-        if (File.Exists(_settingsFilePath))
+        if (File.Exists(path))
         {
             try
             {
-                string json = File.ReadAllText(_settingsFilePath);
-                return JsonSerializer.Deserialize<GlobalSettings>(json) ?? new GlobalSettings();
+                return JsonSerializer.Deserialize<GlobalSettings>(File.ReadAllText(path)) ?? new();
             }
             catch
             {
-                return new GlobalSettings();
+                return new();
             }
         }
-        return new GlobalSettings();
+        return new();
     }
 }

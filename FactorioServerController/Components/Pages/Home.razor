@@ -57,7 +57,7 @@
     else
     {
         <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
-            @foreach (var instance in Instances)
+            @foreach (ServerInstance instance in Instances)
             {
                 bool isRunning = InstanceManager.IsRunning(instance.Id);
                 
@@ -158,8 +158,8 @@
 
     private async Task LoadInstances()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
+        AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        IdentityUser? user = await UserManager.GetUserAsync(authState.User);
         
         if (user == null)
         {
@@ -175,7 +175,7 @@
         }
         else
         {
-            var allowedServerIds = await DbContext.UserServerAccesses
+            List<int> allowedServerIds = await DbContext.UserServerAccesses
                 .Where(usa => usa.UserId == user.Id)
                 .Select(usa => usa.ServerInstanceId)
                 .ToListAsync();
@@ -228,7 +228,7 @@
 
     private async Task CreateNewInstance()
     {
-        var newInstance = new ServerInstance
+        ServerInstance newInstance = new ServerInstance
         {
             Name = $"Factorio Server #{Instances?.Count + 1 ?? 1}",
             Port = 34197 + (Instances?.Count ?? 0),

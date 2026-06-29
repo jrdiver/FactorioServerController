@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using System.Collections.Generic;
 
 namespace FactorioLibrary.Models
 {
@@ -12,7 +11,7 @@ namespace FactorioLibrary.Models
         public string Description { get; set; } = "Hosted by Factorio Manager";
 
         [JsonPropertyName("tags")]
-        public List<string> Tags { get; set; } = new List<string> { "game", "tags" };
+        public List<string> Tags { get; set; } = ["game", "tags"];
 
         [JsonPropertyName("max_players")]
         public int MaxPlayers { get; set; } = 0;

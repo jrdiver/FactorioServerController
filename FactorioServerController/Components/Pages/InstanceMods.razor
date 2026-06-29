@@ -241,8 +241,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
+        AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        IdentityUser? user = await UserManager.GetUserAsync(authState.User);
         
         if (user == null)
         {
@@ -275,7 +275,7 @@ else
     {
         try
         {
-            var modsDir = InstanceManager.GetModsDirectory(Id);
+            string modsDir = InstanceManager.GetModsDirectory(Id);
             if (!Directory.Exists(modsDir))
             {
                 Directory.CreateDirectory(modsDir);
@@ -295,7 +295,7 @@ else
                 }
             }
 
-            var dirInfo = new DirectoryInfo(modsDir);
+            DirectoryInfo dirInfo = new DirectoryInfo(modsDir);
             ModFiles = dirInfo.GetFiles("*.zip")
                 .Select(f => new ModFileInfo
                 {
@@ -338,8 +338,8 @@ else
             return filename;
 
         // Factorio mod filenames are usually "ModName_1.0.0.zip"
-        var nameWithoutExt = filename.Substring(0, filename.Length - 4);
-        var lastUnderscore = nameWithoutExt.LastIndexOf('_');
+        string nameWithoutExt = filename.Substring(0, filename.Length - 4);
+        int lastUnderscore = nameWithoutExt.LastIndexOf('_');
         
         if (lastUnderscore > 0)
         {
@@ -354,8 +354,8 @@ else
         if (string.IsNullOrEmpty(filename) || !filename.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             return "";
 
-        var nameWithoutExt = filename.Substring(0, filename.Length - 4);
-        var lastUnderscore = nameWithoutExt.LastIndexOf('_');
+        string nameWithoutExt = filename.Substring(0, filename.Length - 4);
+        int lastUnderscore = nameWithoutExt.LastIndexOf('_');
         
         if (lastUnderscore > 0 && lastUnderscore < nameWithoutExt.Length - 1)
         {
@@ -393,7 +393,7 @@ else
         string targetFactorioVersion = "";
         if (Instance != null && !string.IsNullOrEmpty(Instance.AssignedVersion) && Instance.AssignedVersion != "latest")
         {
-            var parts = Instance.AssignedVersion.Split('.');
+            string[] parts = Instance.AssignedVersion.Split('.');
             if (parts.Length >= 2)
             {
                 targetFactorioVersion = $"{parts[0]}.{parts[1]}"; // e.g. "1.1" or "2.1"
@@ -402,7 +402,7 @@ else
         
         try
         {
-            using var client = new System.Net.Http.HttpClient();
+            using System.Net.Http.HttpClient client = new System.Net.Http.HttpClient();
             
             foreach (var mod in ModFiles)
             {
@@ -410,21 +410,21 @@ else
                 
                 try
                 {
-                    var response = await client.GetAsync($"https://mods.factorio.com/api/mods/{mod.ModName}");
+                    System.Net.Http.HttpResponseMessage response = await client.GetAsync($"https://mods.factorio.com/api/mods/{mod.ModName}");
                     if (response.IsSuccessStatusCode)
                     {
-                        var json = await response.Content.ReadAsStringAsync();
+                        string json = await response.Content.ReadAsStringAsync();
                         var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                         var modInfo = System.Text.Json.JsonSerializer.Deserialize<FactorioModApiResponse>(json, options);
                         
                         if (modInfo != null && modInfo.Releases != null && modInfo.Releases.Any())
                         {
-                            var validReleases = modInfo.Releases;
+                            List<FactorioModRelease>? validReleases = modInfo.Releases;
                             
                             // If we know the exact factorio version (e.g. 1.1), filter out incompatible newer releases
                             if (!string.IsNullOrEmpty(targetFactorioVersion))
                             {
-                                var filtered = validReleases.Where(r => r.Info_Json != null && r.Info_Json.Factorio_Version == targetFactorioVersion).ToList();
+                                List<FactorioModRelease> filtered = validReleases.Where(r => r.Info_Json != null && r.Info_Json.Factorio_Version == targetFactorioVersion).ToList();
                                 // Fallback to 2.0 if we are on 2.1 and the mod only advertises 2.0
                                 if (!filtered.Any() && targetFactorioVersion == "2.1")
                                 {
@@ -437,15 +437,15 @@ else
                                 }
                             }
 
-                            var latestRelease = validReleases.LastOrDefault();
+                            FactorioModRelease? latestRelease = validReleases.LastOrDefault();
                             if (latestRelease != null && !string.IsNullOrEmpty(latestRelease.Version))
                             {
                                 mod.LatestVersion = latestRelease.Version;
                                 mod.DownloadUrl = latestRelease.Download_Url;
                                 mod.NewFileName = latestRelease.File_Name;
                                 
-                                if (Version.TryParse(mod.CurrentVersion, out var currentVer) && 
-                                    Version.TryParse(latestRelease.Version, out var latestVer))
+                                if (Version.TryParse(mod.CurrentVersion, out Version? currentVer) && 
+                                    Version.TryParse(latestRelease.Version, out Version? latestVer))
                                 {
                                     mod.HasUpdateAvailable = latestVer > currentVer;
                                 }
@@ -470,10 +470,10 @@ else
 
     private void SaveModListJson()
     {
-        var modsDir = InstanceManager.GetModsDirectory(Id);
+        string modsDir = InstanceManager.GetModsDirectory(Id);
         string modListPath = Path.Combine(modsDir, "mod-list.json");
         
-        var options = new JsonSerializerOptions { WriteIndented = true };
+        JsonSerializerOptions options = new JsonSerializerOptions { WriteIndented = true };
         string json = JsonSerializer.Serialize(_modList, options);
         File.WriteAllText(modListPath, json);
     }
@@ -577,7 +577,7 @@ else
 
     private async Task UploadModFiles(InputFileChangeEventArgs e)
     {
-        var files = e.GetMultipleFiles(500); // Allow up to 500 files at once
+        IReadOnlyList<Microsoft.AspNetCore.Components.Forms.IBrowserFile> files = e.GetMultipleFiles(500); // Allow up to 500 files at once
         if (!files.Any()) return;
 
         IsUploading = true;
@@ -587,16 +587,16 @@ else
 
         try
         {
-            var modsDir = InstanceManager.GetModsDirectory(Id);
+            string modsDir = InstanceManager.GetModsDirectory(Id);
             if (!Directory.Exists(modsDir)) Directory.CreateDirectory(modsDir);
 
-            foreach (var file in files)
+            foreach (Microsoft.AspNetCore.Components.Forms.IBrowserFile file in files)
             {
                 if (file.Name.Equals("mod-list.json", StringComparison.OrdinalIgnoreCase))
                 {
-                    var modListPath = Path.Combine(modsDir, "mod-list.json");
-                    await using var jsonStream = file.OpenReadStream(2147483648);
-                    await using var jsonFs = new FileStream(modListPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+                    string modListPath = Path.Combine(modsDir, "mod-list.json");
+                    await using Stream jsonStream = file.OpenReadStream(2147483648);
+                    await using FileStream jsonFs = new FileStream(modListPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
                     await jsonStream.CopyToAsync(jsonFs);
                     continue;
                 }
@@ -609,11 +609,11 @@ else
                 UploadProgress = $"{completed}/{total}";
                 StateHasChanged();
 
-                var path = Path.Combine(modsDir, file.Name);
+                string path = Path.Combine(modsDir, file.Name);
 
                 // Allow up to 2GB max file size
-                await using var stream = file.OpenReadStream(2147483648);
-                await using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+                await using Stream stream = file.OpenReadStream(2147483648);
+                await using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
                 await stream.CopyToAsync(fs);
 
                 completed++;
@@ -655,11 +655,11 @@ else
             
             if (string.IsNullOrEmpty(targetSave))
             {
-                var savesDir = InstanceManager.GetSavesDirectory(Id);
+                string savesDir = InstanceManager.GetSavesDirectory(Id);
                 if (Directory.Exists(savesDir))
                 {
-                    var dirInfo = new DirectoryInfo(savesDir);
-                    var latest = dirInfo.GetFiles("*.zip").OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
+                    DirectoryInfo dirInfo = new DirectoryInfo(savesDir);
+                    FileInfo? latest = dirInfo.GetFiles("*.zip").OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
                     if (latest != null)
                     {
                         targetSave = latest.Name;
@@ -673,7 +673,7 @@ else
                 return;
             }
 
-            var imageTag = string.IsNullOrWhiteSpace(Instance.AssignedVersion) ? "latest" : Instance.AssignedVersion;
+            string imageTag = string.IsNullOrWhiteSpace(Instance.AssignedVersion) ? "latest" : Instance.AssignedVersion;
             var result = await InstanceManager.SyncModsWithSaveAsync(Id, targetSave, imageTag);
 
             if (result.Success)
@@ -704,8 +704,8 @@ else
     {
         try
         {
-            var modsDir = InstanceManager.GetModsDirectory(Id);
-            var path = Path.Combine(modsDir, filename);
+            string modsDir = InstanceManager.GetModsDirectory(Id);
+            string path = Path.Combine(modsDir, filename);
             if (File.Exists(path))
             {
                 File.Delete(path);
@@ -719,13 +719,13 @@ else
     {
         try
         {
-            var savePath = Path.Combine(InstanceManager.GetSavesDirectory(Id), saveName);
-            using var archive = System.IO.Compression.ZipFile.OpenRead(savePath);
-            var entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
+            string savePath = Path.Combine(InstanceManager.GetSavesDirectory(Id), saveName);
+            using System.IO.Compression.ZipArchive archive = System.IO.Compression.ZipFile.OpenRead(savePath);
+            System.IO.Compression.ZipArchiveEntry? entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
             
             if (entry != null)
             {
-                var destPath = Path.Combine(InstanceManager.GetModsDirectory(Id), "mod-settings.dat");
+                string destPath = Path.Combine(InstanceManager.GetModsDirectory(Id), "mod-settings.dat");
                 entry.ExtractToFile(destPath, true);
             }
         }

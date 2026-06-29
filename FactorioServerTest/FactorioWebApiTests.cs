@@ -1,6 +1,5 @@
 using FactorioLibrary;
 using FactorioLibrary.Objects;
-using System.Threading.Tasks;
 
 namespace FactorioServerTest;
 

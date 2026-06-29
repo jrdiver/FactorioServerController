@@ -1,7 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using FactorioLibrary.Services;
-using System.Net.Http;
-using System.Threading.Tasks;
 using System.Net;
 
 namespace FactorioServerTest;
@@ -13,7 +10,7 @@ public class ModManagerTests
     public async Task GetModInfoAsync_ReturnsParsedModInfo()
     {
         // Arrange
-        var mockHandler = new MockHttpMessageHandler();
+        MockHttpMessageHandler mockHandler = new();
         mockHandler.ResponseToReturn.Content = new StringContent(@"
         {
             ""name"": ""bobinserters"",
@@ -28,11 +25,11 @@ public class ModManagerTests
                 }
             ]
         }");
-        var httpClient = new HttpClient(mockHandler);
-        var manager = new ModManager(httpClient);
+        HttpClient httpClient = new(mockHandler);
+        ModManager manager = new(null!, null!, httpClient);
 
         // Act
-        var result = await manager.GetModInfoAsync("bobinserters");
+        ModInfo? result = await manager.GetModInfoAsync("bobinserters");
 
         // Assert
         Assert.IsNotNull(result);
@@ -50,13 +47,13 @@ public class ModManagerTests
     public async Task GetModInfoAsync_ReturnsNullOnNotFound()
     {
         // Arrange
-        var mockHandler = new MockHttpMessageHandler();
+        MockHttpMessageHandler mockHandler = new();
         mockHandler.ResponseToReturn.StatusCode = HttpStatusCode.NotFound;
-        var httpClient = new HttpClient(mockHandler);
-        var manager = new ModManager(httpClient);
+        HttpClient httpClient = new(mockHandler);
+        ModManager manager = new(null!, null!, httpClient);
 
         // Act
-        var result = await manager.GetModInfoAsync("nonexistent-mod");
+        ModInfo? result = await manager.GetModInfoAsync("nonexistent-mod");
 
         // Assert
         Assert.IsNull(result);

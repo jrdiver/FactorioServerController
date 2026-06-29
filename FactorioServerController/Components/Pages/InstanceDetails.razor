@@ -106,7 +106,7 @@ else
                             <div class="col-md-6">
                                 <label class="form-label text-muted">Factorio Version</label>
                                 <InputSelect @bind-Value="Instance.AssignedVersion" class="form-select bg-transparent text-white border-secondary">
-                                    @foreach(var v in AvailableVersions)
+                                    @foreach (var v in AvailableVersions)
                                     {
                                         <option value="@v.Tag" class="text-dark">@v.DisplayName</option>
                                     }
@@ -195,7 +195,7 @@ else
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var save in SaveFiles)
+                                    @foreach (SaveFileInfo save in SaveFiles)
                                     {
                                         <tr>
                                             <td>
@@ -378,8 +378,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
+        AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        IdentityUser? user = await UserManager.GetUserAsync(authState.User);
         
         if (user == null)
         {
@@ -549,13 +549,13 @@ else
     {
         try
         {
-            var savesDir = InstanceManager.GetSavesDirectory(Id);
+            string savesDir = InstanceManager.GetSavesDirectory(Id);
             if (!Directory.Exists(savesDir))
             {
                 Directory.CreateDirectory(savesDir);
             }
 
-            var dirInfo = new DirectoryInfo(savesDir);
+            DirectoryInfo dirInfo = new DirectoryInfo(savesDir);
             SaveFiles = dirInfo.GetFiles("*.zip")
                 .Select(f => new SaveFileInfo
                 {
@@ -575,7 +575,7 @@ else
 
     private async Task UploadSaveFile(InputFileChangeEventArgs e)
     {
-        var file = e.File;
+        Microsoft.AspNetCore.Components.Forms.IBrowserFile file = e.File;
         if (file == null) return;
         if (!file.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
         {
@@ -589,14 +589,14 @@ else
 
         try
         {
-            var savesDir = InstanceManager.GetSavesDirectory(Id);
+            string savesDir = InstanceManager.GetSavesDirectory(Id);
             if (!Directory.Exists(savesDir)) Directory.CreateDirectory(savesDir);
 
-            var path = Path.Combine(savesDir, file.Name);
+            string path = Path.Combine(savesDir, file.Name);
 
             // Allow up to 2GB max file size
-            await using var stream = file.OpenReadStream(2147483648);
-            await using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+            await using Stream stream = file.OpenReadStream(2147483648);
+            await using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
             await stream.CopyToAsync(fs);
 
             LoadSaveFiles(); // Refresh list
@@ -616,8 +616,8 @@ else
     {
         try
         {
-            var savesDir = InstanceManager.GetSavesDirectory(Id);
-            var path = Path.Combine(savesDir, filename);
+            string savesDir = InstanceManager.GetSavesDirectory(Id);
+            string path = Path.Combine(savesDir, filename);
             if (File.Exists(path))
             {
                 File.Delete(path);
@@ -660,7 +660,7 @@ else
 
     private string GetFriendlyTime(DateTime utcTime)
     {
-        var timeSpan = DateTime.UtcNow - utcTime;
+        TimeSpan timeSpan = DateTime.UtcNow - utcTime;
 
         if (timeSpan <= TimeSpan.FromSeconds(60))
             return "Just now";
@@ -678,17 +678,17 @@ else
     {
         try
         {
-            using var archive = System.IO.Compression.ZipFile.OpenRead(zipPath);
+            using System.IO.Compression.ZipArchive archive = System.IO.Compression.ZipFile.OpenRead(zipPath);
             // script.dat and level.dat contain the last saved version. 
             // For massive multi-part Space Age saves, level.dat is split, so we must check script.dat first.
-            var entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("script.dat", StringComparison.OrdinalIgnoreCase))
+            System.IO.Compression.ZipArchiveEntry? entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("script.dat", StringComparison.OrdinalIgnoreCase))
                         ?? archive.Entries.FirstOrDefault(e => e.Name.Equals("level.dat", StringComparison.OrdinalIgnoreCase)) 
                         ?? archive.Entries.FirstOrDefault(e => e.Name.Equals("level-init.dat", StringComparison.OrdinalIgnoreCase));
             
             if (entry != null)
             {
-                using var stream = entry.Open();
-                using var reader = new System.IO.BinaryReader(stream);
+                using Stream stream = entry.Open();
+                using System.IO.BinaryReader reader = new System.IO.BinaryReader(stream);
                 ushort major = reader.ReadUInt16();
                 ushort minor = reader.ReadUInt16();
                 ushort patch = reader.ReadUInt16();

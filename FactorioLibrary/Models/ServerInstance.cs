@@ -27,5 +27,5 @@ public class ServerInstance
 
     public string? Description { get; set; }
 
-    public List<string> IgnoredMods { get; set; } = new();
+    public List<string> IgnoredMods { get; set; } = [];
 }

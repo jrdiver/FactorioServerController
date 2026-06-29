@@ -30,17 +30,17 @@ else
 {
     <script>
         window.autoScrollConsole = () => {
-            var el = document.getElementById('console-output');
+            let el = document.getElementById('console-output');
             if(el) {
                 // If they are within 150px of the bottom, snap to bottom. Otherwise leave them alone.
-                var isAtBottom = el.scrollHeight - el.clientHeight <= el.scrollTop + 150;
+                let isAtBottom = el.scrollHeight - el.clientHeight <= el.scrollTop + 150;
                 if(isAtBottom) {
                     el.scrollTop = el.scrollHeight;
                 }
             }
         }
         window.forceScrollConsole = () => {
-            var el = document.getElementById('console-output');
+            let el = document.getElementById('console-output');
             if(el) { el.scrollTop = el.scrollHeight; }
         }
     </script>
@@ -74,7 +74,7 @@ else
                 }
                 else
                 {
-                    @foreach (var log in Logs)
+                    @foreach (string log in Logs)
                     {
                         <div style="white-space: @(WrapLogs ? "pre-wrap" : "pre"); word-wrap: @(WrapLogs ? "break-word" : "normal"); color: #d7d7d7;">@log</div>
                     }
@@ -125,8 +125,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
+        AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        IdentityUser? user = await UserManager.GetUserAsync(authState.User);
         
         if (user == null)
         {
@@ -183,14 +183,14 @@ else
 
     private async Task ReadLogsLoopAsync()
     {
-        var buffer = new byte[81920];
+        byte[] buffer = new byte[81920];
         StringBuilder lineBuffer = new StringBuilder();
         
         try
         {
             while (!_cts.IsCancellationRequested && _logStream != null)
             {
-                var result = await _logStream.ReadOutputAsync(buffer, 0, buffer.Length, _cts.Token);
+                MultiplexedStream.ReadResult result = await _logStream.ReadOutputAsync(buffer, 0, buffer.Length, _cts.Token);
                 
                 if (result.EOF) break;
 

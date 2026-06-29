@@ -4,13 +4,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FactorioLibrary.Data;
 
-public class AppDbContext : IdentityDbContext
+public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbContext(options)
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options)
-        : base(options)
-    {
-    }
-
     public DbSet<ServerInstance> ServerInstances { get; set; }
     public DbSet<UserApiKey> UserApiKeys { get; set; }
     public DbSet<UserServerAccess> UserServerAccesses { get; set; }

@@ -12,20 +12,17 @@ using Microsoft.AspNetCore.HttpOverrides;
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // Ensure data directory exists for persistent storage
-var dataDir = Path.Combine(Directory.GetCurrentDirectory(), "data");
+string dataDir = Path.Combine(Directory.GetCurrentDirectory(), "data");
 if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
 
 // Add services to the container.
-var defaultDb = $"Data Source={Path.Combine(dataDir, "factorio_manager.db")}";
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? defaultDb));
+string defaultDb = $"Data Source={Path.Combine(dataDir, "factorio_manager.db")}";
+builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? defaultDb));
 
-var defaultKeyPath = Path.Combine(dataDir, "keys");
-var dataProtectionPath = builder.Configuration["DataProtection:KeyPath"] ?? defaultKeyPath;
+string defaultKeyPath = Path.Combine(dataDir, "keys");
+string dataProtectionPath = builder.Configuration["DataProtection:KeyPath"] ?? defaultKeyPath;
 
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
-    .SetApplicationName("FactorioServerController");
+builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath)).SetApplicationName("FactorioServerController");
 
 builder.Services.AddAuthentication(options =>
     {
@@ -34,8 +31,7 @@ builder.Services.AddAuthentication(options =>
     })
     .AddIdentityCookies();
 
-builder.Services.AddAuthentication()
-    .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>("ApiKey", options => { });
+builder.Services.AddAuthentication().AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>("ApiKey", options => { });
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
@@ -54,14 +50,10 @@ builder.Services.AddIdentityCore<IdentityUser>(options =>
         options.Password.RequireUppercase = false;
         options.Password.RequireLowercase = false;
         options.Password.RequiredLength = 8;
-    })
-    .AddRoles<IdentityRole>()
-    .AddEntityFrameworkStores<AppDbContext>()
-    .AddSignInManager()
-    .AddDefaultTokenProviders();
+    }).AddRoles<IdentityRole>().AddEntityFrameworkStores<AppDbContext>().AddSignInManager().AddDefaultTokenProviders();
 
 // Register Factorio Core Services
-var settingsPath = builder.Configuration["GlobalSettings:Path"] ?? Path.Combine(dataDir, "settings.json");
+string settingsPath = builder.Configuration["GlobalSettings:Path"] ?? Path.Combine(dataDir, "settings.json");
 builder.Services.AddSingleton<GlobalSettingsService>(sp => new GlobalSettingsService(settingsPath));
 builder.Services.AddSingleton<FactorioWebApi>(sp => new FactorioWebApi(new FactorioLibrary.Objects.FactorioCredentials(), sp.GetRequiredService<GlobalSettingsService>()));
 builder.Services.AddSingleton<VersionManager>();
@@ -69,42 +61,29 @@ builder.Services.AddSingleton<ModManager>();
 builder.Services.AddSingleton<InstanceManager>();
 builder.Services.AddSingleton<RconService>();
 
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents(options =>
-    {
-        // Allow up to 2GB uploads via SignalR for extremely large Factorio save files
-        options.RootComponents.MaxJSRootComponents = 100;
-    })
-    .AddHubOptions(options =>
-    {
-        options.MaximumReceiveMessageSize = 2147483648; // 2GB
-    });
+builder.Services.AddRazorComponents().AddInteractiveServerComponents(options => { options.RootComponents.MaxJSRootComponents = 100; }).AddHubOptions(options => { options.MaximumReceiveMessageSize = 2147483648; });
 
 WebApplication app = builder.Build();
 
 // Automatically apply database migrations on startup so new DBs get tables created
-using (var scope = app.Services.CreateScope())
+using (IServiceScope scope = app.Services.CreateScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    AppDbContext dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
-    
+
     // Seed the first user as Administrator if no administrators exist
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+    RoleManager<IdentityRole> roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    UserManager<IdentityUser> userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
     
     if (!roleManager.RoleExistsAsync("Administrator").GetAwaiter().GetResult())
-    {
         roleManager.CreateAsync(new IdentityRole("Administrator")).GetAwaiter().GetResult();
-    }
-    
-    var admins = userManager.GetUsersInRoleAsync("Administrator").GetAwaiter().GetResult();
+
+    IList<IdentityUser> admins = userManager.GetUsersInRoleAsync("Administrator").GetAwaiter().GetResult();
     if (admins.Count == 0)
     {
-        var firstUser = userManager.Users.FirstOrDefault();
+        IdentityUser? firstUser = userManager.Users.FirstOrDefault();
         if (firstUser != null)
-        {
             userManager.AddToRoleAsync(firstUser, "Administrator").GetAwaiter().GetResult();
-        }
     }
 }
 
@@ -128,8 +107,7 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.MapAuthEndpoints();
 
@@ -137,9 +115,9 @@ app.MapAuthEndpoints();
 app.MapGet("/api/instances/{id:int}/saves/{filename}", (int id, string filename, InstanceManager manager) => 
 {
     // Sanitize filename to prevent directory traversal
-    var safeFilename = Path.GetFileName(filename);
-    var savesDir = manager.GetSavesDirectory(id);
-    var filePath = Path.Combine(savesDir, safeFilename);
+    string safeFilename = Path.GetFileName(filename);
+    string savesDir = manager.GetSavesDirectory(id);
+    string filePath = Path.Combine(savesDir, safeFilename);
     
     if (!System.IO.File.Exists(filePath)) 
         return Results.NotFound();

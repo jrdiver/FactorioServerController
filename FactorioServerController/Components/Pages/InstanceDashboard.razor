@@ -70,7 +70,7 @@
             @if (Stats.OnlinePlayers.Any())
             {
                 <ul class="list-group list-group-flush bg-transparent">
-                    @foreach (var player in Stats.OnlinePlayers)
+                    @foreach (string player in Stats.OnlinePlayers)
                     {
                         <li class="list-group-item bg-transparent text-white border-secondary px-0">
                             <i class="bi bi-person me-2 text-primary"></i>@player

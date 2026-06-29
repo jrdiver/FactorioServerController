@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace FactorioLibrary.Models;
@@ -6,7 +5,7 @@ namespace FactorioLibrary.Models;
 public class ModList
 {
     [JsonPropertyName("mods")]
-    public List<ModEntry> Mods { get; set; } = new();
+    public List<ModEntry> Mods { get; set; } = [];
 }
 
 public class ModEntry

@@ -1,7 +1,5 @@
 using FactorioLibrary.Services;
 using Microsoft.Extensions.Configuration;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System.Collections.Generic;
 
 namespace FactorioServerTest;
 
@@ -10,7 +8,8 @@ public class InstanceManagerTests
 {
     private IConfiguration CreateConfig(string hostBasePath)
     {
-        var inMemorySettings = new Dictionary<string, string?> {
+        Dictionary<string, string?> inMemorySettings = new()
+        {
             {"HOST_BASE_MOUNT_PATH", hostBasePath}
         };
 
@@ -23,11 +22,11 @@ public class InstanceManagerTests
     public void GetSavesDirectory_ShouldReturnCorrectPath()
     {
         // Arrange
-        var config = CreateConfig("/custom/host/path");
-        var manager = new InstanceManager(config, new RconService());
+        IConfiguration config = CreateConfig("/custom/host/path");
+        InstanceManager manager = new(config, new RconService());
 
         // Act
-        var result = manager.GetSavesDirectory(42);
+        string result = manager.GetSavesDirectory(42);
 
         // Assert
         StringAssert.Contains(result, "42");
@@ -38,11 +37,11 @@ public class InstanceManagerTests
     public void GetModsDirectory_ShouldReturnCorrectPath()
     {
         // Arrange
-        var config = CreateConfig("/custom/host/path");
-        var manager = new InstanceManager(config, new RconService());
+        IConfiguration config = CreateConfig("/custom/host/path");
+        InstanceManager manager = new(config, new RconService());
 
         // Act
-        var result = manager.GetModsDirectory(99);
+        string result = manager.GetModsDirectory(99);
 
         // Assert
         StringAssert.Contains(result, "99");
@@ -53,11 +52,11 @@ public class InstanceManagerTests
     public void IsRunning_ShouldReturnFalseForUnknownId()
     {
         // Arrange
-        var config = CreateConfig("/custom/host/path");
-        var manager = new InstanceManager(config, new RconService());
+        IConfiguration config = CreateConfig("/custom/host/path");
+        InstanceManager manager = new(config, new RconService());
 
         // Act
-        var isRunning = manager.IsRunning(9999);
+        bool isRunning = manager.IsRunning(9999);
 
         // Assert
         Assert.IsFalse(isRunning);

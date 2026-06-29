@@ -1,32 +1,18 @@
-using System.IO;
-using System.Net.Http;
-using System.Threading.Tasks;
 using FactorioLibrary.Objects;
 using FactorioLibrary.Internal;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace FactorioLibrary.Services;
 
-public class VersionManager
+public class VersionManager(FactorioWebApi webApi, string versionsDirectory = "factorio_versions", HttpClient? httpClient = null)
 {
-    private readonly FactorioWebApi _webApi;
-    private readonly string _versionsDirectory;
-    private readonly HttpClient _httpClient;
-
-    public VersionManager(FactorioWebApi webApi, string versionsDirectory = "factorio_versions", HttpClient? httpClient = null)
-    {
-        _webApi = webApi;
-        _versionsDirectory = versionsDirectory;
-        _httpClient = httpClient ?? Shared.HttpClient;
-        if (!Directory.Exists(_versionsDirectory))
-        {
-            Directory.CreateDirectory(_versionsDirectory);
-        }
-    }
+    private readonly FactorioWebApi _webApi = webApi;
+    private readonly HttpClient _httpClient = httpClient ?? Shared.HttpClient;
 
     public async Task<string> DownloadVersionAsync(FactorioRelease release)
     {
+        if (!Directory.Exists(versionsDirectory))
+            Directory.CreateDirectory(versionsDirectory);
+
         string buildString = release.Platform switch
         {
             "core-linux_headless64" => "headless/linux64",
@@ -44,19 +30,17 @@ public class VersionManager
         
         // Let's assume we want to download to a temp file and extract
         string extension = release.Os == PlatformOs.Windows ? "zip" : "tar.xz";
-        string filePath = Path.Combine(_versionsDirectory, $"factorio_{versionStr}_{release.Platform}.{extension}");
+        string filePath = Path.Combine(versionsDirectory, $"factorio_{versionStr}_{release.Platform}.{extension}");
 
         if (File.Exists(filePath))
-        {
             return filePath; // Already downloaded
-        }
 
         // This is a placeholder for the actual download implementation which would write the stream to a file.
         // We will mock this in tests.
-        using var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+        using HttpResponseMessage response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
 
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
+        using FileStream fs = new(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
         await response.Content.CopyToAsync(fs);
 
         return filePath;

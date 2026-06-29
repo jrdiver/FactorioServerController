@@ -1,6 +1,4 @@
-﻿using System.Net.Http;
-
-namespace FactorioLibrary.Internal;
+﻿namespace FactorioLibrary.Internal;
 
 internal static class Shared
 {

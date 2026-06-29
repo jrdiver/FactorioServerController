@@ -1,9 +1,5 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Net;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using CoreRCON;
 
 namespace FactorioLibrary.Services
@@ -19,13 +15,10 @@ namespace FactorioLibrary.Services
         {
             try
             {
-                if (!_activeConnections.TryGetValue(instanceId, out var rcon))
+                if (!_activeConnections.TryGetValue(instanceId, out RCON? rcon))
                 {
                     rcon = new RCON(IPAddress.Loopback, (ushort)port, password);
-                    rcon.OnDisconnected += () =>
-                    {
-                        _activeConnections.TryRemove(instanceId, out _);
-                    };
+                    rcon.OnDisconnected += () => _activeConnections.TryRemove(instanceId, out _);
                     await rcon.ConnectAsync();
                     _activeConnections.TryAdd(instanceId, rcon);
                 }
@@ -45,24 +38,20 @@ namespace FactorioLibrary.Services
         /// </summary>
         public async Task<List<string>> GetOnlinePlayersAsync(int instanceId, int port, string password)
         {
-            var players = new List<string>();
-            var response = await SendCommandAsync(instanceId, port, password, "/players online");
+            List<string> players = [];
+            string response = await SendCommandAsync(instanceId, port, password, "/players online");
             
             // Factorio response format: "Online players (1): \n username"
             // Or "Online players (0):"
             if (response.Contains("Error:"))
-            {
                 return players;
-            }
 
-            var lines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            string[] lines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
             for (int i = 1; i < lines.Length; i++)
             {
-                var playerName = lines[i].Trim().Split(' ')[0]; // just get the username
+                string playerName = lines[i].Trim().Split(' ')[0]; // just get the username
                 if (!string.IsNullOrEmpty(playerName))
-                {
                     players.Add(playerName);
-                }
             }
 
             return players;

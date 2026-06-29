@@ -111,8 +111,8 @@
                 
                 @if (Navigation.Uri.Contains("error="))
                 {
-                    var uri = new Uri(Navigation.Uri);
-                    var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+                    Uri uri = new Uri(Navigation.Uri);
+                    Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
                     if (query.TryGetValue("error", out var err))
                     {
                         <div class="alert alert-danger">@err</div>
@@ -120,8 +120,8 @@
                 }
                 @if (Navigation.Uri.Contains("msg="))
                 {
-                    var uri = new Uri(Navigation.Uri);
-                    var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+                    Uri uri = new Uri(Navigation.Uri);
+                    Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
                     if (query.TryGetValue("msg", out var msg))
                     {
                         <div class="alert alert-success">@msg</div>
@@ -161,7 +161,7 @@
     {
         AppSettings = SettingsService.GetSettings();
         
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
         
         if (user.Identity?.IsAuthenticated == true)
@@ -178,7 +178,7 @@
     {
         if (CurrentUser == null) return;
         
-        var keyRecord = await DbContext.UserApiKeys.FirstOrDefaultAsync(k => k.UserId == CurrentUser.Id);
+        UserApiKey? keyRecord = await DbContext.UserApiKeys.FirstOrDefaultAsync(k => k.UserId == CurrentUser.Id);
         if (keyRecord != null)
         {
             UserApiKey = keyRecord.ApiKey;
@@ -186,7 +186,7 @@
         else
         {
             // Auto-generate if missing for some reason
-            var newKey = new UserApiKey
+            UserApiKey newKey = new UserApiKey
             {
                 UserId = CurrentUser.Id,
                 ApiKey = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N")
@@ -201,7 +201,7 @@
     {
         if (CurrentUser == null) return;
         
-        var keyRecord = await DbContext.UserApiKeys.FirstOrDefaultAsync(k => k.UserId == CurrentUser.Id);
+        UserApiKey? keyRecord = await DbContext.UserApiKeys.FirstOrDefaultAsync(k => k.UserId == CurrentUser.Id);
         if (keyRecord != null)
         {
             keyRecord.ApiKey = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");

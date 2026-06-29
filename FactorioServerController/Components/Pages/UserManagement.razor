@@ -67,9 +67,9 @@
                                     @if (user.ServerAccesses.Any())
                                     {
                                         <div class="d-flex flex-wrap gap-1">
-                                            @foreach (var access in user.ServerAccesses)
+                                            @foreach (UserServerAccess access in user.ServerAccesses)
                                             {
-                                                var server = Servers.FirstOrDefault(s => s.Id == access.ServerInstanceId);
+                                                ServerInstance? server = Servers.FirstOrDefault(s => s.Id == access.ServerInstanceId);
                                                 if (server != null)
                                                 {
                                                     <span class="badge border border-secondary text-light">@server.Name</span>
@@ -175,7 +175,7 @@
                     <p class="text-muted mb-3">Select the servers this user is allowed to view and manage.</p>
                     
                     <div class="list-group">
-                        @foreach (var server in Servers)
+                        @foreach (ServerInstance server in Servers)
                         {
                             bool hasAccess = SelectedUserAccesses.Contains(server.Id);
                             <label class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between align-items-center" style="cursor: pointer;">
@@ -215,8 +215,8 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
+        AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        IdentityUser? user = await UserManager.GetUserAsync(authState.User);
         CurrentUserId = user?.Id;
         
         await LoadData();
@@ -225,13 +225,13 @@
     private async Task LoadData()
     {
         Servers = await DbContext.ServerInstances.ToListAsync();
-        var allUsers = await UserManager.Users.ToListAsync();
+        List<IdentityUser> allUsers = await UserManager.Users.ToListAsync();
         
         Users.Clear();
-        foreach (var u in allUsers)
+        foreach (IdentityUser u in allUsers)
         {
             bool isAdmin = await UserManager.IsInRoleAsync(u, "Administrator");
-            var accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == u.Id).ToListAsync();
+            List<UserServerAccess> accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == u.Id).ToListAsync();
             
             Users.Add(new UserInfo
             {
@@ -265,8 +265,8 @@
             return;
         }
 
-        var user = new IdentityUser { UserName = NewUsername };
-        var result = await UserManager.CreateAsync(user, NewPassword);
+        IdentityUser? user = new IdentityUser { UserName = NewUsername };
+        IdentityResult result = await UserManager.CreateAsync(user, NewPassword);
         
         if (result.Succeeded)
         {
@@ -315,7 +315,7 @@
         }
         else
         {
-            var access = await DbContext.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == SelectedUser.Id && usa.ServerInstanceId == serverId);
+            UserServerAccess? access = await DbContext.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == SelectedUser.Id && usa.ServerInstanceId == serverId);
             if (access != null)
             {
                 DbContext.UserServerAccesses.Remove(access);
@@ -342,7 +342,7 @@
 
     private async Task DeleteUser(IdentityUser user)
     {
-        var accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == user.Id).ToListAsync();
+        List<UserServerAccess> accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == user.Id).ToListAsync();
         if (accesses.Any())
         {
             DbContext.UserServerAccesses.RemoveRange(accesses);

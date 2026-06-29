@@ -1,8 +1,5 @@
 using FactorioLibrary.Models;
 using FactorioLibrary.Services;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System.IO;
-using System.Threading.Tasks;
 
 namespace FactorioServerTest;
 
@@ -24,8 +21,8 @@ public class GlobalSettingsServiceTests
     public void Constructor_ShouldLoadDefaultsIfNoFileExists()
     {
         // Act
-        var service = new GlobalSettingsService(TestSettingsPath);
-        var settings = service.GetSettings();
+        GlobalSettingsService service = new(TestSettingsPath);
+        GlobalSettings settings = service.GetSettings();
 
         // Assert
         Assert.IsNotNull(settings);
@@ -37,16 +34,16 @@ public class GlobalSettingsServiceTests
     public async Task SaveSettingsAsync_ShouldWriteToFile()
     {
         // Arrange
-        var service = new GlobalSettingsService(TestSettingsPath);
-        var settings = new GlobalSettings { ShowAllVersions = true, ShowLegacyVersions = true };
+        GlobalSettingsService service = new(TestSettingsPath);
+        GlobalSettings settings = new() { ShowAllVersions = true, ShowLegacyVersions = true };
 
         // Act
         await service.SaveSettingsAsync(settings);
 
         // Assert
         Assert.IsTrue(File.Exists(TestSettingsPath));
-        var loadedService = new GlobalSettingsService(TestSettingsPath);
-        var loadedSettings = loadedService.GetSettings();
+        GlobalSettingsService loadedService = new(TestSettingsPath);
+        GlobalSettings loadedSettings = loadedService.GetSettings();
 
         Assert.IsTrue(loadedSettings.ShowAllVersions);
         Assert.IsTrue(loadedSettings.ShowLegacyVersions);

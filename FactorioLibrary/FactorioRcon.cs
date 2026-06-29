@@ -1,26 +1,16 @@
-using System;
-using System.IO;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace FactorioLibrary;
 
-public class FactorioRcon : IDisposable
+public class FactorioRcon(string host, int port, string password) : IDisposable
 {
-    private readonly string _host;
-    private readonly int _port;
-    private readonly string _password;
+    private readonly string _host = host;
+    private readonly int _port = port;
+    private readonly string _password = password;
     private TcpClient? _client;
     private NetworkStream? _stream;
     private int _packetId = 1;
-
-    public FactorioRcon(string host, int port, string password)
-    {
-        _host = host;
-        _port = port;
-        _password = password;
-    }
 
     public async Task<bool> ConnectAsync()
     {
@@ -31,21 +21,17 @@ public class FactorioRcon : IDisposable
         // Send Auth (Type 3)
         int authId = _packetId;
         await SendPacketAsync(3, _password);
-        
+
         // Wait for Auth Response
         while (true)
         {
-            var response = await ReceivePacketAsync();
+            (int Id, int Type, string Body) response = await ReceivePacketAsync();
             if (response.Id == -1)
-            {
                 throw new Exception("Authentication rejected by server (Invalid password or RCON bug).");
-            }
             if (response.Id == authId)
-            {
                 break; // Auth successful
-            }
         }
-        
+
         return true;
     }
 
@@ -57,14 +43,12 @@ public class FactorioRcon : IDisposable
         {
             int cmdId = _packetId;
             await SendPacketAsync(2, command);
-            
+
             while (true)
             {
-                var response = await ReceivePacketAsync();
+                (int Id, int Type, string Body) response = await ReceivePacketAsync();
                 if (response.Id == cmdId)
-                {
                     return response.Body;
-                }
             }
         }
         catch (Exception ex)
@@ -80,9 +64,9 @@ public class FactorioRcon : IDisposable
         byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
         int packetSize = 10 + bodyBytes.Length; // 4 (ID) + 4 (Type) + body + 1 (null) + 1 (null)
 
-        using var ms = new MemoryStream();
-        using var writer = new BinaryWriter(ms);
-        
+        using MemoryStream ms = new();
+        using BinaryWriter writer = new(ms);
+
         writer.Write(packetSize);
         writer.Write(_packetId);
         writer.Write(type);
@@ -90,9 +74,9 @@ public class FactorioRcon : IDisposable
         writer.Write((byte)0); // Null terminator for body
         writer.Write((byte)0); // Null terminator for empty string
 
-        var data = ms.ToArray();
+        byte[] data = ms.ToArray();
         await _stream.WriteAsync(data, 0, data.Length);
-        
+
         _packetId++; // Increment ID for the next packet
     }
 
@@ -100,7 +84,7 @@ public class FactorioRcon : IDisposable
     {
         if (_stream == null) throw new InvalidOperationException("Not connected.");
 
-        var sizeBuffer = new byte[4];
+        byte[] sizeBuffer = new byte[4];
         int sizeBytesRead = 0;
         while (sizeBytesRead < 4)
         {
@@ -110,8 +94,8 @@ public class FactorioRcon : IDisposable
         }
 
         int size = BitConverter.ToInt32(sizeBuffer, 0);
-        var packetData = new byte[size];
-        
+        byte[] packetData = new byte[size];
+
         int totalRead = 0;
         while (totalRead < size)
         {

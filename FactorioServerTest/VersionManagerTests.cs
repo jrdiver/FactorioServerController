@@ -1,13 +1,7 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using FactorioLibrary.Services;
 using FactorioLibrary.Objects;
 using FactorioLibrary;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Net;
-using System.IO;
-using System;
 
 namespace FactorioServerTest;
 
@@ -47,16 +41,16 @@ public class VersionManagerTests
     public async Task DownloadVersionAsync_UsesCorrectUrl_AndSavesFile()
     {
         // Arrange
-        var mockHandler = new MockHttpMessageHandler();
+        MockHttpMessageHandler mockHandler = new();
         mockHandler.ResponseToReturn.Content = new StringContent("fake binary data");
-        var httpClient = new HttpClient(mockHandler);
-        
-        var settingsService = new GlobalSettingsService("test_settings.json");
-        var credentials = new FactorioCredentials { Username = "user", Token = "token" };
-        var webApi = new FactorioWebApi(credentials, settingsService);
-        var manager = new VersionManager(webApi, _tempDir, httpClient);
+        HttpClient httpClient = new(mockHandler);
 
-        var release = new FactorioRelease 
+        GlobalSettingsService settingsService = new("test_settings.json");
+        FactorioCredentials credentials = new() { Username = "user", Token = "token" };
+        FactorioWebApi webApi = new(credentials, settingsService);
+        VersionManager manager = new(webApi, _tempDir, httpClient);
+
+        FactorioRelease release = new()
         { 
             Version = new Version(1, 1, 107), 
             Platform = "core-linux_headless64",

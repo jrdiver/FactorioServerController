@@ -1,11 +1,6 @@
-using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.IO;
 using System.IO.Compression;
-using System.Linq;
 using System.Runtime.InteropServices;
 using FactorioLibrary.Internal;
 using FactorioLibrary.Models;
@@ -13,24 +8,17 @@ using Microsoft.Extensions.Configuration;
 
 namespace FactorioLibrary.Services;
 
-public class ModManager
+public class ModManager(IConfiguration config, GlobalSettingsService settingsService, HttpClient? httpClient = null)
 {
     private const string ModPortalApiBase = "https://mods.factorio.com/api/mods";
-    private readonly HttpClient _httpClient;
-    private readonly GlobalSettingsService _settingsService;
-    private readonly string _hostBaseMountPath;
-
-    public ModManager(IConfiguration config, GlobalSettingsService settingsService, HttpClient? httpClient = null)
-    {
-        _httpClient = httpClient ?? Shared.HttpClient;
-        _settingsService = settingsService;
-        _hostBaseMountPath = config.GetValue<string>("HOST_BASE_MOUNT_PATH") 
-            ?? (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "C:\\FactorioServers" : "/mnt/user/appdata/factorio_manager/servers");
-    }
+    private readonly HttpClient _httpClient = httpClient ?? Shared.HttpClient;
+    private readonly GlobalSettingsService _settingsService = settingsService;
+    private readonly string _hostBaseMountPath = config.GetValue<string>("HOST_BASE_MOUNT_PATH") 
+        ?? (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "C:\\FactorioServers" : "/mnt/user/appdata/factorio_manager/servers");
 
     public async Task<ModInfo?> GetModInfoAsync(string modName)
     {
-        var response = await _httpClient.GetAsync($"{ModPortalApiBase}/{Uri.EscapeDataString(modName)}");
+        HttpResponseMessage response = await _httpClient.GetAsync($"{ModPortalApiBase}/{Uri.EscapeDataString(modName)}");
         if (!response.IsSuccessStatusCode)
             return null;
 
@@ -48,27 +36,27 @@ public class ModManager
 
     public async Task<List<LocalModInfo>> GetLocalModsAsync(int instanceId)
     {
-        var modsDir = GetInstanceModsPath(instanceId);
-        if (!Directory.Exists(modsDir)) return new List<LocalModInfo>();
+        string modsDir = GetInstanceModsPath(instanceId);
+        if (!Directory.Exists(modsDir)) return [];
 
-        var localMods = new List<LocalModInfo>();
-        var zipFiles = Directory.GetFiles(modsDir, "*.zip");
+        List<LocalModInfo> localMods = [];
+        string[] zipFiles = Directory.GetFiles(modsDir, "*.zip");
 
         // Parse mod-list.json to see what is enabled
-        var enabledMods = new HashSet<string>();
-        var modListPath = Path.Combine(modsDir, "mod-list.json");
+        HashSet<string> enabledMods = [];
+        string modListPath = Path.Combine(modsDir, "mod-list.json");
         if (File.Exists(modListPath))
         {
             try
             {
-                var json = await File.ReadAllTextAsync(modListPath);
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("mods", out var modsArray))
+                string json = await File.ReadAllTextAsync(modListPath);
+                using JsonDocument doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("mods", out JsonElement modsArray))
                 {
-                    foreach (var mod in modsArray.EnumerateArray())
+                    foreach (JsonElement mod in modsArray.EnumerateArray())
                     {
-                        var name = mod.GetProperty("name").GetString();
-                        var isEnabled = mod.GetProperty("enabled").GetBoolean();
+                        string? name = mod.GetProperty("name").GetString();
+                        bool isEnabled = mod.GetProperty("enabled").GetBoolean();
                         if (isEnabled && name != null) enabledMods.Add(name);
                     }
                 }
@@ -76,22 +64,22 @@ public class ModManager
             catch { }
         }
 
-        foreach (var zipPath in zipFiles)
+        foreach (string zipPath in zipFiles)
         {
             try
             {
-                using var archive = ZipFile.OpenRead(zipPath);
-                var infoEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("info.json", StringComparison.OrdinalIgnoreCase));
+                using ZipArchive archive = ZipFile.OpenRead(zipPath);
+                ZipArchiveEntry? infoEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("info.json", StringComparison.OrdinalIgnoreCase));
                 if (infoEntry != null)
                 {
-                    using var stream = infoEntry.Open();
-                    using var reader = new StreamReader(stream);
-                    var json = reader.ReadToEnd();
-                    using var doc = JsonDocument.Parse(json);
-                    
-                    var name = doc.RootElement.GetProperty("name").GetString();
-                    var version = doc.RootElement.GetProperty("version").GetString();
-                    var title = doc.RootElement.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : name;
+                    using Stream stream = infoEntry.Open();
+                    using StreamReader reader = new(stream);
+                    string json = reader.ReadToEnd();
+                    using JsonDocument doc = JsonDocument.Parse(json);
+
+                    string? name = doc.RootElement.GetProperty("name").GetString();
+                    string? version = doc.RootElement.GetProperty("version").GetString();
+                    string? title = doc.RootElement.TryGetProperty("title", out JsonElement titleProp) ? titleProp.GetString() : name;
 
                     if (name != null)
                     {
@@ -113,13 +101,11 @@ public class ModManager
 
     public async Task<(bool success, string error)> UpdateModAsync(int instanceId, string modName, string downloadUrl, string newFileName, string oldFileName)
     {
-        var settings = _settingsService.GetSettings();
+        GlobalSettings settings = _settingsService.GetSettings();
         if (string.IsNullOrEmpty(settings.FactorioUsername) || string.IsNullOrEmpty(settings.FactorioToken))
-        {
             return (false, "Factorio Mod Portal credentials are not configured in Settings.");
-        }
 
-        var modsDir = GetInstanceModsPath(instanceId);
+        string modsDir = GetInstanceModsPath(instanceId);
         if (!Directory.Exists(modsDir)) Directory.CreateDirectory(modsDir);
 
         string finalUrl = $"https://mods.factorio.com{downloadUrl}?username={Uri.EscapeDataString(settings.FactorioUsername.Trim())}&token={Uri.EscapeDataString(settings.FactorioToken.Trim())}";
@@ -127,23 +113,19 @@ public class ModManager
 
         try
         {
-            using var response = await _httpClient.GetAsync(finalUrl, HttpCompletionOption.ResponseHeadersRead);
+            using HttpResponseMessage response = await _httpClient.GetAsync(finalUrl, HttpCompletionOption.ResponseHeadersRead);
             if (!response.IsSuccessStatusCode)
-            {
                 return (false, $"Mod Portal returned {response.StatusCode} when attempting to download.");
-            }
 
-            using var fs = new FileStream(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None);
+            using FileStream fs = new(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None);
             await response.Content.CopyToAsync(fs);
             
             // Delete old file if successful and it's a different file
             if (!string.IsNullOrEmpty(oldFileName) && oldFileName != newFileName)
             {
-                var oldFilePath = Path.Combine(modsDir, oldFileName);
+                string oldFilePath = Path.Combine(modsDir, oldFileName);
                 if (File.Exists(oldFilePath))
-                {
                     File.Delete(oldFilePath);
-                }
             }
 
             return (true, string.Empty);
@@ -179,7 +161,7 @@ public class ModInfo
     public int DownloadsCount { get; set; }
 
     [JsonPropertyName("releases")]
-    public List<ModRelease> Releases { get; set; } = new();
+    public List<ModRelease> Releases { get; set; } = [];
 }
 
 public class ModRelease

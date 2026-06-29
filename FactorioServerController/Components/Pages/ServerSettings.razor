@@ -221,8 +221,8 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
+        AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        IdentityUser? user = await UserManager.GetUserAsync(authState.User);
         
         if (user == null)
         {
@@ -255,7 +255,7 @@
     {
         try
         {
-            var settingsPath = Path.Combine(InstanceManager.GetConfigDirectory(Id), "server-settings.json");
+            string settingsPath = Path.Combine(InstanceManager.GetConfigDirectory(Id), "server-settings.json");
             if (File.Exists(settingsPath))
             {
                 RawJson = File.ReadAllText(settingsPath);
@@ -263,7 +263,7 @@
                 // Try to parse it to the friendly model
                 try
                 {
-                    var parsed = JsonSerializer.Deserialize<ServerSettingsModel>(RawJson);
+                    ServerSettingsModel? parsed = JsonSerializer.Deserialize<ServerSettingsModel>(RawJson);
                     if (parsed != null)
                     {
                         SettingsModel = parsed;
@@ -304,7 +304,7 @@
         {
             try
             {
-                var parsed = JsonSerializer.Deserialize<ServerSettingsModel>(RawJson);
+                ServerSettingsModel? parsed = JsonSerializer.Deserialize<ServerSettingsModel>(RawJson);
                 if (parsed != null)
                 {
                     SettingsModel = parsed;
@@ -356,8 +356,8 @@
                 jsonToSave = RawJson;
             }
 
-            var settingsPath = Path.Combine(InstanceManager.GetConfigDirectory(Id), "server-settings.json");
-            var configDir = Path.GetDirectoryName(settingsPath);
+            string settingsPath = Path.Combine(InstanceManager.GetConfigDirectory(Id), "server-settings.json");
+            string? configDir = Path.GetDirectoryName(settingsPath);
             
             if (configDir != null && !Directory.Exists(configDir))
             {
@@ -375,7 +375,7 @@
             }
             else
             {
-                var parsed = JsonSerializer.Deserialize<ServerSettingsModel>(jsonToSave);
+                ServerSettingsModel? parsed = JsonSerializer.Deserialize<ServerSettingsModel>(jsonToSave);
                 if (parsed != null) SettingsModel = parsed;
             }
 
