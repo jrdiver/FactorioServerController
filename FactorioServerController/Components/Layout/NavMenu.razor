@@ -4,15 +4,13 @@
             <i class="bi bi-hdd-network-fill text-accent"></i>
             <span>Factorio Manager</span>
         </a>
-        <label for="navbar-toggler-checkbox" class="navbar-toggler" title="Navigation menu">
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
             <i class="bi bi-list fs-1"></i>
-        </label>
+        </button>
     </div>
 </div>
 
-<input type="checkbox" id="navbar-toggler-checkbox" class="d-none" />
-
-<div class="nav-scrollable">
+<div class="nav-scrollable @(collapseNavMenu ? "" : "expanded")" @onclick="ToggleNavMenu">
     <nav class="nav flex-column mt-3">
         <div class="nav-item px-3 mb-1">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
@@ -56,3 +54,12 @@
         </AuthorizeView>
     </nav>
 </div>
+
+@code {
+    private bool collapseNavMenu = true;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+}

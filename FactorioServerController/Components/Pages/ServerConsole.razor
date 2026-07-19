@@ -11,6 +11,7 @@
 @implements IAsyncDisposable
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
+@inject FactorioLibrary.Services.RconService RconService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 @inject AuthenticationStateProvider AuthStateProvider
@@ -29,19 +30,29 @@
 else
 {
     <script>
-        window.autoScrollConsole = () => {
+        window.setupConsoleAutoScroll = () => {
             let el = document.getElementById('console-output');
-            if(el) {
-                // If they are within 150px of the bottom, snap to bottom. Otherwise leave them alone.
-                let isAtBottom = el.scrollHeight - el.clientHeight <= el.scrollTop + 150;
-                if(isAtBottom) {
+            if(!el) return;
+            
+            // Default to true so it snaps on first load
+            let isAtBottom = true;
+            
+            // Track user scroll position
+            el.addEventListener('scroll', () => {
+                isAtBottom = el.scrollHeight - el.clientHeight <= el.scrollTop + 150;
+            });
+            
+            // When DOM changes (new logs added), scroll if we were at the bottom
+            const observer = new MutationObserver((mutations) => {
+                if (isAtBottom) {
                     el.scrollTop = el.scrollHeight;
                 }
-            }
-        }
-        window.forceScrollConsole = () => {
-            let el = document.getElementById('console-output');
-            if(el) { el.scrollTop = el.scrollHeight; }
+            });
+            
+            observer.observe(el, { childList: true, subtree: true });
+            
+            // Initial force scroll
+            el.scrollTop = el.scrollHeight;
         }
     </script>
 
@@ -122,6 +133,8 @@ else
     
     private MultiplexedStream? _logStream;
     private CancellationTokenSource _cts = new();
+    private List<string> _pendingLogs = new();
+    private readonly object _logLock = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -164,7 +177,7 @@ else
         {
             try 
             {
-                await JSRuntime.InvokeVoidAsync("forceScrollConsole");
+                await JSRuntime.InvokeVoidAsync("setupConsoleAutoScroll");
             }
             catch { }
         }
@@ -186,6 +199,35 @@ else
         byte[] buffer = new byte[81920];
         StringBuilder lineBuffer = new StringBuilder();
         
+        // Background task to flush pending logs to the UI exactly 10 times a second
+        _ = Task.Run(async () => {
+            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+            try {
+                while (await timer.WaitForNextTickAsync(_cts.Token)) {
+                    bool hasLogs = false;
+                    lock (_logLock) {
+                        hasLogs = _pendingLogs.Count > 0;
+                    }
+                    
+                    if (hasLogs) {
+                        await InvokeAsync(() => {
+                            lock (_logLock) {
+                                Logs.AddRange(_pendingLogs);
+                                _pendingLogs.Clear();
+                            }
+                            // Keep max 500 lines to prevent DOM bloat
+                            if (Logs.Count > 500) {
+                                Logs.RemoveRange(0, Logs.Count - 500);
+                            }
+                            StateHasChanged();
+                        });
+                        
+                        // Autoscroll is now handled natively by JS MutationObserver in the browser
+                    }
+                }
+            } catch { }
+        });
+        
         try
         {
             while (!_cts.IsCancellationRequested && _logStream != null)
@@ -198,37 +240,22 @@ else
                 {
                     string text = Encoding.UTF8.GetString(buffer, 0, result.Count);
                     
-                    // Buffer the text and split only when we have complete lines
                     lineBuffer.Append(text);
                     string currentBuffer = lineBuffer.ToString();
                     
                     int newlineIndex;
-                    bool updated = false;
                     
-                    while ((newlineIndex = currentBuffer.IndexOf('\n')) >= 0)
+                    lock (_logLock) 
                     {
-                        string line = currentBuffer.Substring(0, newlineIndex).TrimEnd('\r');
-                        Logs.Add(line);
-                        if (Logs.Count > 500) Logs.RemoveAt(0);
-                        
-                        currentBuffer = currentBuffer.Substring(newlineIndex + 1);
-                        updated = true;
+                        while ((newlineIndex = currentBuffer.IndexOf('\n')) >= 0)
+                        {
+                            _pendingLogs.Add(currentBuffer.Substring(0, newlineIndex).TrimEnd('\r'));
+                            currentBuffer = currentBuffer.Substring(newlineIndex + 1);
+                        }
                     }
                     
                     lineBuffer.Clear();
                     lineBuffer.Append(currentBuffer);
-
-                    if (updated)
-                    {
-                        await InvokeAsync(StateHasChanged);
-                        
-                        // Scroll to bottom using JSInterop if they are already near the bottom
-                        try 
-                        {
-                            await JSRuntime.InvokeVoidAsync("autoScrollConsole");
-                        }
-                        catch { /* ignore JS errors if disconnected */ }
-                    }
                 }
             }
         }
@@ -238,8 +265,10 @@ else
         }
         catch (Exception ex)
         {
-            Logs.Add($"[Error reading logs: {ex.Message}]");
-            await InvokeAsync(StateHasChanged);
+            await InvokeAsync(() => {
+                Logs.Add($"[Error reading logs: {ex.Message}]");
+                StateHasChanged();
+            });
         }
     }
 
@@ -273,65 +302,23 @@ else
             // A Factorio server spun up by the controller uses the default bridge network unless specified.
             // However, the Controller mapped the RconPort to the Host! So we can use host.docker.internal or 172.17.0.1 (Docker Host IP)
             // Or if we run native on windows, "127.0.0.1". 
-            // A foolproof way is to get the Docker Host IP or just use the local IP.
-            string hostAddress = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? "host.docker.internal" : "127.0.0.1";
-            
-            // On Linux, host.docker.internal might not resolve unless --add-host is used. 
-            // Another approach is connecting to the container's IP directly from Docker API, but networks might differ.
-            // Let's use 127.0.0.1 first if native, and we will try to resolve the container IP.
-            
             Logs.Add($"> {command}"); // Echo locally
             await InvokeAsync(StateHasChanged);
 
-            bool connected = false;
-            FactorioRcon? rcon = null;
+            string response = await RconService.SendCommandAsync(Instance.Id, Instance.RconPort, Instance.RconPassword, command);
             
-            string lastError = "Unknown error";
-            
-            // Attempt 1: Try connecting directly to the container's internal IP on port 27015
-            string? containerIp = await InstanceManager.GetContainerIpAddressAsync(Instance.Id);
-            if (!string.IsNullOrEmpty(containerIp))
+            if (response.StartsWith("Error"))
             {
-                rcon = new FactorioRcon(containerIp, 27015, Instance.RconPassword);
-                try 
-                {
-                    connected = await rcon.ConnectAsync();
-                }
-                catch (Exception ex) { lastError = $"Internal IP {containerIp}: {ex.Message}"; }
+                Logs.Add($"[RCON Error] Could not connect to RCON port. Details: {response}");
             }
-
-            // Attempt 2: If running natively on Windows, internal IPs might not route. Fallback to host port mapping.
-            // If the Controller itself is in Docker, 127.0.0.1 won't work, so we must use the Docker Host Gateway (host.docker.internal).
-            if (!connected)
+            else if (!string.IsNullOrWhiteSpace(response))
             {
-                rcon?.Dispose();
-                string fallbackIp = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? "host.docker.internal" : "127.0.0.1";
-                rcon = new FactorioRcon(fallbackIp, Instance.RconPort, Instance.RconPassword);
-                try
-                {
-                    connected = await rcon.ConnectAsync();
-                }
-                catch (Exception ex) { lastError = $"{fallbackIp}:{Instance.RconPort}: {ex.Message}"; }
-            }
-            
-            if (connected && rcon != null)
-            {
-                string response = await rcon.SendCommandAsync(command);
-                if (!string.IsNullOrWhiteSpace(response))
-                {
-                    Logs.Add($"[RCON] {response.Trim()}");
-                }
-                else
-                {
-                    Logs.Add($"[RCON] (Command executed successfully, no output returned)");
-                }
+                Logs.Add($"[RCON] {response.Trim()}");
             }
             else
             {
-                Logs.Add($"[RCON Error] Could not connect to RCON port. Details: {lastError}");
+                Logs.Add($"[RCON] (Command executed successfully, no output returned)");
             }
-            
-            rcon?.Dispose();
         }
         catch (Exception ex)
         {
@@ -341,11 +328,7 @@ else
         {
             await InvokeAsync(StateHasChanged);
             
-            try 
-            {
-                await JSRuntime.InvokeVoidAsync("forceScrollConsole");
-            }
-            catch { }
+            // JS MutationObserver handles scrolling now
         }
     }
 

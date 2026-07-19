@@ -1,12 +1,42 @@
 using System.Collections.Concurrent;
 using System.Net;
-using CoreRCON;
 
 namespace FactorioLibrary.Services
 {
     public class RconService
     {
-        private readonly ConcurrentDictionary<int, RCON> _activeConnections = new();
+        private string GetHost()
+        {
+            if (Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") != "true")
+                return "127.0.0.1";
+
+            try
+            {
+                // First try host.docker.internal (works on Windows/Mac Docker Desktop)
+                if (Dns.GetHostAddresses("host.docker.internal").Length > 0)
+                    return "host.docker.internal";
+            }
+            catch { }
+
+            try
+            {
+                // On native Linux docker, host.docker.internal doesn't exist by default.
+                // However, the Docker Host machine is always the default gateway of the container's network!
+                var gateway = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                    .SelectMany(n => n.GetIPProperties().GatewayAddresses)
+                    .Select(g => g.Address)
+                    .Where(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    .FirstOrDefault();
+
+                if (gateway != null)
+                    return gateway.ToString();
+            }
+            catch { }
+
+            return "172.17.0.1"; // Fallback to standard Docker bridge gateway
+        }
+
+        private readonly ConcurrentDictionary<int, FactorioRcon> _activeConnections = new();
 
         /// <summary>
         /// Sends a command to the Factorio server via RCON.
@@ -15,21 +45,37 @@ namespace FactorioLibrary.Services
         {
             try
             {
-                if (!_activeConnections.TryGetValue(instanceId, out RCON? rcon))
+                if (!_activeConnections.TryGetValue(instanceId, out FactorioRcon? rcon))
                 {
-                    rcon = new RCON(IPAddress.Loopback, (ushort)port, password);
-                    rcon.OnDisconnected += () => _activeConnections.TryRemove(instanceId, out _);
+                    rcon = new FactorioRcon(GetHost(), port, password);
                     await rcon.ConnectAsync();
                     _activeConnections.TryAdd(instanceId, rcon);
                 }
 
-                return await rcon.SendCommandAsync(command);
+                string response = await rcon.SendCommandAsync(command);
+                if (response.StartsWith("Error"))
+                    throw new Exception(response);
+                    
+                return response;
             }
-            catch (Exception ex)
+            catch
             {
-                // If connection fails, remove it so we can try again next time
-                _activeConnections.TryRemove(instanceId, out _);
-                return $"Error: {ex.Message}";
+                // If the connection drops or errors, remove it from the pool and try one more time
+                if (_activeConnections.TryRemove(instanceId, out FactorioRcon? oldRcon))
+                    oldRcon.Dispose();
+
+                try
+                {
+                    FactorioRcon freshRcon = new FactorioRcon(GetHost(), port, password);
+                    await freshRcon.ConnectAsync();
+                    _activeConnections.TryAdd(instanceId, freshRcon);
+                    return await freshRcon.SendCommandAsync(command);
+                }
+                catch (Exception ex2)
+                {
+                    _activeConnections.TryRemove(instanceId, out _);
+                    return $"Error: {ex2.Message}";
+                }
             }
         }
 

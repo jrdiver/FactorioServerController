@@ -1,5 +1,11 @@
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
+using Docker.DotNet;
+using Docker.DotNet.Models;
+using FactorioLibrary.Models;
+using FactorioLibrary.Data;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
@@ -13,6 +19,7 @@ public class InstanceManager
     private readonly DockerClient _dockerClient;
     private readonly string _hostBaseMountPath;
     private readonly RconService _rconService;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     // Maps instance ID to Docker Container ID
     private readonly ConcurrentDictionary<int, string> _runningContainers = new();
@@ -20,9 +27,10 @@ public class InstanceManager
     // Cache stats for 2.5 seconds to prevent multiple clients from hammering Docker API
     private readonly ConcurrentDictionary<int, (DateTime FetchedAt, ServerStats Stats)> _statsCache = new();
 
-    public InstanceManager(IConfiguration configuration, RconService rconService)
+    public InstanceManager(IConfiguration configuration, RconService rconService, IServiceScopeFactory scopeFactory)
     {
         _rconService = rconService;
+        _scopeFactory = scopeFactory;
         // Use named pipes on Windows, unix socket on Linux/Unraid
         Uri dockerUri = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
             ? new Uri("npipe://./pipe/docker_engine")
@@ -56,10 +64,10 @@ public class InstanceManager
         catch { }
     }
 
-    public async Task<bool> StartInstanceAsync(ServerInstance instance)
+    public async Task<(bool Success, bool CleanedCorruptSave)> StartInstanceAsync(ServerInstance instance)
     {
         if (_runningContainers.ContainsKey(instance.Id))
-            return false; // Already tracked as running
+            return (false, false); // Already tracked as running
 
         string containerName = $"factorio_server_{instance.Id}";
         string imageTag = string.IsNullOrWhiteSpace(instance.AssignedVersion) ? "latest" : instance.AssignedVersion;
@@ -90,7 +98,7 @@ public class InstanceManager
                     {
                         Console.WriteLine($"[Instance {instance.Id}] Container {c.ID} is already running.");
                         _runningContainers.TryAdd(instance.Id, c.ID);
-                        return true;
+                        return (true, false);
                     }
                 }
             }
@@ -116,6 +124,18 @@ public class InstanceManager
 
             // 4. Configure save file loading behavior
             string savesDir = GetSavesDirectory(instance.Id);
+            bool cleanedCorruptSave = false;
+            
+            // Clean up any orphaned .tmp.zip files from unclean shutdowns before checking saves
+            // If we don't do this, factoriotools/factorio will pick the .tmp.zip as the latest save and fail to boot.
+            if (Directory.Exists(savesDir))
+            {
+                foreach (string tmpFile in Directory.GetFiles(savesDir, "*.tmp.zip"))
+                {
+                    try { File.Delete(tmpFile); cleanedCorruptSave = true; } catch { Console.WriteLine($"Could not delete {tmpFile}"); }
+                }
+            }
+            
             bool hasSaves = Directory.Exists(savesDir) && Directory.GetFiles(savesDir, "*.zip").Any();
 
             string loadLatest = "false";
@@ -171,18 +191,18 @@ public class InstanceManager
             {
                 Console.WriteLine($"[Instance {instance.Id}] Successfully started!");
                 _runningContainers.TryAdd(instance.Id, response.ID);
-                return true;
+                return (true, cleanedCorruptSave);
             }
 
             Console.WriteLine($"[Instance {instance.Id}] Docker reported the container did not start successfully.");
-            return false;
+            return (false, cleanedCorruptSave);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Instance {instance.Id}] FATAL ERROR during startup: {ex.GetType().Name}");
             Console.WriteLine($"[Instance {instance.Id}] Message: {ex.Message}");
             Console.WriteLine($"[Instance {instance.Id}] Stack Trace: {ex.StackTrace}");
-            return false;
+            return (false, false);
         }
     }
 
@@ -192,6 +212,33 @@ public class InstanceManager
         {
             try
             {
+                // Try clean RCON shutdown first to bypass Docker's buggy SIGTERM routing
+                using IServiceScope scope = _scopeFactory.CreateScope();
+                AppDbContext dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                GlobalSettingsService settingsService = scope.ServiceProvider.GetRequiredService<GlobalSettingsService>();
+                
+                ServerInstance? instance = await dbContext.ServerInstances.FindAsync(instanceId);
+                int timeoutSeconds = settingsService.GetSettings().ShutdownTimeoutSeconds;
+                
+                if (instance != null)
+                {
+                    Console.WriteLine($"[Instance {instanceId}] Initiating clean shutdown via RCON /quit...");
+                    await _rconService.SendCommandAsync(instanceId, instance.RconPort, instance.RconPassword, "/quit");
+                    
+                    // Wait for Factorio to cleanly save and exit the container on its own
+                    for (int i = 0; i < timeoutSeconds; i++)
+                    {
+                        try 
+                        {
+                            var c = await _dockerClient.Containers.InspectContainerAsync(containerId);
+                            if (!c.State.Running) break;
+                        } catch { break; } // Container was removed/stopped
+                        
+                        await Task.Delay(1000);
+                    }
+                }
+
+                // Fallback catch-all to ensure the container is stopped if it hung
                 await _dockerClient.Containers.StopContainerAsync(containerId, new ContainerStopParameters { WaitBeforeKillSeconds = 10 });
             }
             catch
@@ -218,7 +265,7 @@ public class InstanceManager
                 if (c.Names.Contains($"/{containerName}"))
                 {
                     if (c.State == "running")
-                        await _dockerClient.Containers.StopContainerAsync(c.ID, new ContainerStopParameters { WaitBeforeKillSeconds = 10 });
+                        await _dockerClient.Containers.StopContainerAsync(c.ID, new ContainerStopParameters { WaitBeforeKillSeconds = 60 });
 
                     await _dockerClient.Containers.RemoveContainerAsync(c.ID, new ContainerRemoveParameters { Force = true });
                 }

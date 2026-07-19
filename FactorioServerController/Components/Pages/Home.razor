@@ -33,6 +33,15 @@
         </AuthorizeView>
     </div>
 
+    @if (!string.IsNullOrEmpty(DashboardAlert))
+    {
+        <div class="alert alert-warning alert-dismissible fade show mb-4" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <strong>Notice:</strong> @DashboardAlert
+            <button type="button" class="btn-close" @onclick="() => DashboardAlert = null"></button>
+        </div>
+    }
+
     @if (Instances == null)
     {
         <div class="d-flex justify-content-center mt-5">
@@ -126,6 +135,7 @@
     private HashSet<int> _stoppingInstances = new();
     private PeriodicTimer? _timer;
     private CancellationTokenSource _cts = new();
+    private string? DashboardAlert;
 
     protected override async Task OnInitializedAsync()
     {
@@ -206,10 +216,16 @@
 
     private async Task StartInstance(ServerInstance instance)
     {
+        DashboardAlert = null; // Clear previous alerts
         _startingInstances.Add(instance.Id);
         StateHasChanged();
         
-        await InstanceManager.StartInstanceAsync(instance);
+        var result = await InstanceManager.StartInstanceAsync(instance);
+        
+        if (result.CleanedCorruptSave)
+        {
+            DashboardAlert = $"A corrupted .tmp.zip save file was automatically detected and deleted while starting {instance.Name} to prevent a boot crash.";
+        }
         
         _startingInstances.Remove(instance.Id);
         StateHasChanged();
