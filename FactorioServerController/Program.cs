@@ -125,4 +125,34 @@ app.MapGet("/api/instances/{id:int}/saves/{filename}", (int id, string filename,
     return Results.File(filePath, "application/zip", safeFilename);
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
+// Minimal API endpoint for downloading individual mod files
+app.MapGet("/api/instances/{id:int}/mods/{filename}", (int id, string filename, InstanceManager manager) => 
+{
+    string safeFilename = Path.GetFileName(filename);
+    string modsDir = manager.GetModsDirectory(id);
+    string filePath = Path.Combine(modsDir, safeFilename);
+    
+    if (!System.IO.File.Exists(filePath)) 
+        return Results.NotFound();
+        
+    return Results.File(filePath, "application/zip", safeFilename);
+}).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
+
+// Minimal API endpoint for downloading all mods as a zip
+app.MapGet("/api/instances/{id:int}/mods/downloadAll", (int id, InstanceManager manager) => 
+{
+    string modsDir = manager.GetModsDirectory(id);
+    if (!Directory.Exists(modsDir))
+        return Results.NotFound();
+
+    string tempZipPath = Path.Combine(manager.GetConfigDirectory(id), "modpack_temp.zip");
+    
+    if (System.IO.File.Exists(tempZipPath))
+        System.IO.File.Delete(tempZipPath);
+
+    System.IO.Compression.ZipFile.CreateFromDirectory(modsDir, tempZipPath, System.IO.Compression.CompressionLevel.Fastest, false);
+    
+    return Results.File(tempZipPath, "application/zip", $"instance_{id}_mods.zip");
+}).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
+
 app.Run();

@@ -16,6 +16,7 @@
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<IdentityUser> UserManager
+@inject IJSRuntime JS
 
 <PageTitle>Mod Management - @(Instance?.Name ?? "Loading...")</PageTitle>
 
@@ -81,7 +82,7 @@ else
                     }
 
                     <InputFile OnChange="UploadModFiles" class="d-none" id="modUpload" accept=".zip,.json" multiple />
-                    <button class="btn btn-glass" type="button" onclick="document.getElementById('modUpload').click()" disabled="@IsUploading">
+                    <button class="btn btn-glass me-3" type="button" onclick="document.getElementById('modUpload').click()" disabled="@IsUploading">
                         @if (IsUploading)
                         {
                             <span class="spinner-border spinner-border-sm me-2"></span>
@@ -91,6 +92,12 @@ else
                         {
                             <i class="bi bi-upload me-2"></i><span>Upload Mods</span>
                         }
+                    </button>
+                    <a href="/api/instances/@Instance.Id/mods/downloadAll" class="btn btn-glass-secondary me-3" download>
+                        <i class="bi bi-cloud-arrow-down me-2"></i><span>Download Mod Pack</span>
+                    </a>
+                    <button class="btn btn-danger" @onclick="DeleteAllModsWithConfirm" disabled="@(IsUpdating || IsUploading)">
+                        <i class="bi bi-trash me-2"></i><span>Delete All</span>
                     </button>
                 </div>
             </div>
@@ -187,7 +194,10 @@ else
                                                     <i class="bi bi-cloud-download"></i>
                                                 </button>
                                             }
-                                            <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteMod(mod.Name)" title="Delete Mod">
+                                            <a href="/api/instances/@Instance.Id/mods/@mod.Name" class="btn btn-sm btn-glass-secondary text-primary me-2" download title="Download Mod">
+                                                <i class="bi bi-cloud-arrow-down"></i>
+                                            </a>
+                                            <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteModWithConfirm(mod.Name)" title="Delete Mod">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         }
@@ -700,6 +710,15 @@ else
         }
     }
 
+    private async Task DeleteModWithConfirm(string filename)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to delete {filename}?");
+        if (confirmed)
+        {
+            DeleteMod(filename);
+        }
+    }
+
     private void DeleteMod(string filename)
     {
         try
@@ -713,6 +732,51 @@ else
             }
         }
         catch { }
+    }
+
+    private async Task DeleteAllModsWithConfirm()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete ALL mods and mod settings? This cannot be undone.");
+        if (confirmed)
+        {
+            DeleteAllMods();
+        }
+    }
+
+    private void DeleteAllMods()
+    {
+        try
+        {
+            string modsDir = InstanceManager.GetModsDirectory(Id);
+            if (Directory.Exists(modsDir))
+            {
+                DirectoryInfo dirInfo = new DirectoryInfo(modsDir);
+                foreach (FileInfo file in dirInfo.GetFiles("*.zip"))
+                {
+                    file.Delete();
+                }
+
+                // Delete mod-settings.dat as requested by user
+                string settingsPath = Path.Combine(modsDir, "mod-settings.dat");
+                if (File.Exists(settingsPath))
+                {
+                    File.Delete(settingsPath);
+                }
+
+                // Clear the internal list so it saves an empty json
+                _modList.Mods.Clear();
+                SaveModListJson();
+                LoadMods();
+                
+                UpdateSuccess = "Successfully deleted all mods and settings!";
+                UpdateError = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateError = $"Error deleting mods: {ex.Message}";
+            UpdateSuccess = null;
+        }
     }
 
     private void ExtractModSettingsFromSave(string saveName)
