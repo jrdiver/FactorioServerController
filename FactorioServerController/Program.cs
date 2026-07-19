@@ -155,4 +155,68 @@ app.MapGet("/api/instances/{id:int}/mods/downloadAll", (int id, InstanceManager 
     return Results.File(tempZipPath, "application/zip", $"instance_{id}_mods.zip");
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
+// Minimal API endpoint for listing all instances
+app.MapGet("/api/instances", (AppDbContext db, InstanceManager manager) => 
+{
+    var instances = db.ServerInstances.Select(x => new 
+    {
+        x.Id,
+        x.Name,
+        x.Port,
+        x.RconPort,
+        IsRunning = manager.IsRunning(x.Id),
+        x.ActiveSaveName
+    }).ToList();
+    return Results.Ok(instances);
+}).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
+
+// Minimal API endpoint for listing saves for an instance
+app.MapGet("/api/instances/{id:int}/saves", async (int id, AppDbContext db, InstanceManager manager) => 
+{
+    var instance = await db.ServerInstances.FindAsync(id);
+    if (instance == null) return Results.NotFound();
+    
+    string savesDir = manager.GetSavesDirectory(id);
+    if (!Directory.Exists(savesDir)) Directory.CreateDirectory(savesDir);
+    var saves = Directory.GetFiles(savesDir, "*.zip").Select(Path.GetFileName);
+
+    var result = saves.Select(s => new 
+    {
+        Name = s,
+        IsActive = (s == instance.ActiveSaveName)
+    }).ToList();
+    return Results.Ok(result);
+}).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
+
+// Minimal API endpoint for starting an instance
+app.MapPost("/api/instances/{id:int}/start", async (int id, AppDbContext db, InstanceManager manager) => 
+{
+    var instance = await db.ServerInstances.FindAsync(id);
+    if (instance == null) return Results.NotFound();
+    
+    var result = await manager.StartInstanceAsync(instance);
+    return result.Success ? Results.Ok("Started") : Results.BadRequest("Failed to start instance or already running.");
+}).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
+
+// Minimal API endpoint for stopping an instance
+app.MapPost("/api/instances/{id:int}/stop", async (int id, AppDbContext db, InstanceManager manager) => 
+{
+    var instance = await db.ServerInstances.FindAsync(id);
+    if (instance == null) return Results.NotFound();
+    
+    await manager.StopInstanceAsync(id);
+    return Results.Ok("Stop command sent.");
+}).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
+
+// Minimal API endpoint for setting the active save
+app.MapPut("/api/instances/{id:int}/saves/active", async (int id, string saveName, AppDbContext db) => 
+{
+    var instance = await db.ServerInstances.FindAsync(id);
+    if (instance == null) return Results.NotFound();
+    
+    instance.ActiveSaveName = saveName;
+    await db.SaveChangesAsync();
+    return Results.Ok(new { Message = $"Active save set to {saveName}" });
+}).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
+
 app.Run();

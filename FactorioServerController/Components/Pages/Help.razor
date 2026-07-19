@@ -1,0 +1,120 @@
+@page "/help"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+
+<PageTitle>Help & Documentation</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-2"><i class="bi bi-book-half text-accent me-3"></i>Documentation & API</h1>
+            <p class="text-muted fs-5">Learn how to manage your Factorio fleet and utilize the REST API.</p>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Dashboard & Server Management Section -->
+        <div class="col-md-6">
+            <div class="glass-card h-100">
+                <h3 class="mb-4 border-bottom border-secondary pb-2"><i class="bi bi-grid-1x2-fill text-accent me-2"></i>Platform Guide</h3>
+                
+                <div class="mb-4">
+                    <h5 class="text-white"><i class="bi bi-server me-2"></i>Factorio Instances</h5>
+                    <p class="text-muted">The <strong>Dashboard</strong> provides a high-level overview of all configured Factorio servers. From here, you can start, stop, or navigate to individual server panels. Each server runs in its own isolated Docker container.</p>
+                </div>
+
+                <div class="mb-4">
+                    <h5 class="text-white"><i class="bi bi-terminal me-2"></i>Server Console (RCON)</h5>
+                    <p class="text-muted">Clicking the terminal icon on an instance opens the live <strong>RCON Console</strong>. This allows you to interact directly with the running server. You can type commands like <code>/players</code>, <code>/time</code>, or <code>/server-save</code> just as if you were in-game.</p>
+                </div>
+
+                <div class="mb-4">
+                    <h5 class="text-white"><i class="bi bi-puzzle me-2"></i>Mod Management</h5>
+                    <p class="text-muted">In the instance details page, you can search the official Factorio Mod Portal and install mods directly. The system automatically resolves dependencies and downloads the required files. Remember to restart the server to apply newly installed mods!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Documentation Section -->
+        <div class="col-md-6">
+            <div class="glass-card h-100">
+                <h3 class="mb-4 border-bottom border-secondary pb-2"><i class="bi bi-code-slash text-accent me-2"></i>Developer API</h3>
+                <p class="text-muted">Factorio Manager exposes a secure REST API for integrating with external tools or downloading server files programmatically.</p>
+                
+                <h5 class="text-white mt-4"><i class="bi bi-key me-2"></i>Authentication</h5>
+                <p class="text-muted small">Generate an API key from the <strong>Settings</strong> page. You must provide this key with every request using one of two methods:</p>
+                <ul class="text-muted small">
+                    <li><strong>HTTP Header:</strong> <code>x-api-key: YOUR_KEY</code> <em>(Recommended)</em></li>
+                    <li><strong>Query Parameter:</strong> <code>?apikey=YOUR_KEY</code></li>
+                </ul>
+
+                <h5 class="text-white mt-4"><i class="bi bi-hdd-network me-2"></i>Available Endpoints</h5>
+
+                <div class="bg-dark bg-opacity-50 p-3 rounded mb-3 border border-secondary">
+                    <div class="d-flex align-items-center mb-1">
+                        <span class="badge bg-primary me-2">GET</span>
+                        <code class="text-white fs-6">/api/instances</code>
+                    </div>
+                    <p class="text-muted mb-0 small">Returns a list of all configured servers, their ports, and whether they are currently running.</p>
+                </div>
+
+                <div class="bg-dark bg-opacity-50 p-3 rounded mb-3 border border-secondary">
+                    <div class="d-flex align-items-center mb-1">
+                        <span class="badge bg-primary me-2">GET</span>
+                        <code class="text-white fs-6">/api/instances/{id}/saves</code>
+                    </div>
+                    <p class="text-muted mb-0 small">Lists all save files available for the specified instance. The save flagged with <code>isActive: true</code> is the one currently loaded by the server.</p>
+                </div>
+
+                <div class="bg-dark bg-opacity-50 p-3 rounded mb-3 border border-secondary">
+                    <div class="d-flex align-items-center mb-1">
+                        <span class="badge bg-success me-2">POST</span>
+                        <code class="text-white fs-6">/api/instances/{id}/start</code>
+                    </div>
+                    <p class="text-muted mb-0 small">Starts the specified Factorio server instance.</p>
+                </div>
+
+                <div class="bg-dark bg-opacity-50 p-3 rounded mb-3 border border-secondary">
+                    <div class="d-flex align-items-center mb-1">
+                        <span class="badge bg-success me-2">POST</span>
+                        <code class="text-white fs-6">/api/instances/{id}/stop</code>
+                    </div>
+                    <p class="text-muted mb-0 small">Stops the specified Factorio server instance.</p>
+                </div>
+
+                <div class="bg-dark bg-opacity-50 p-3 rounded mb-3 border border-secondary">
+                    <div class="d-flex align-items-center mb-1">
+                        <span class="badge bg-warning text-dark me-2">PUT</span>
+                        <code class="text-white fs-6">/api/instances/{id}/saves/active?saveName=FILE.zip</code>
+                    </div>
+                    <p class="text-muted mb-0 small">Sets which save file the server will load on its next startup.</p>
+                </div>
+                
+                <div class="bg-dark bg-opacity-50 p-3 rounded mb-3 border border-secondary">
+                    <div class="d-flex align-items-center mb-1">
+                        <span class="badge bg-primary me-2">GET</span>
+                        <code class="text-white fs-6">/api/instances/{id}/saves/{filename}</code>
+                    </div>
+                    <p class="text-muted mb-0 small">Downloads a specific save zip file from the server instance.</p>
+                </div>
+
+                <div class="bg-dark bg-opacity-50 p-3 rounded mb-3 border border-secondary">
+                    <div class="d-flex align-items-center mb-1">
+                        <span class="badge bg-primary me-2">GET</span>
+                        <code class="text-white fs-6">/api/instances/{id}/mods/{filename}</code>
+                    </div>
+                    <p class="text-muted mb-0 small">Downloads a specific individual mod zip file.</p>
+                </div>
+
+                <div class="bg-dark bg-opacity-50 p-3 rounded border border-secondary">
+                    <div class="d-flex align-items-center mb-1">
+                        <span class="badge bg-primary me-2">GET</span>
+                        <code class="text-white fs-6">/api/instances/{id}/mods/downloadAll</code>
+                    </div>
+                    <p class="text-muted mb-0 small">Automatically compresses all mods for the specified instance into a single zip archive and initiates a download. Useful for syncing client modpacks!</p>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
