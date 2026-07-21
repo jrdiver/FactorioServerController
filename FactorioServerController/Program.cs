@@ -8,6 +8,7 @@ using FactorioServerController.Components;
 using FactorioServerController.Components.Endpoints;
 using FactorioServerController.Auth;
 using Microsoft.AspNetCore.HttpOverrides;
+using System.Security.Claims;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -112,8 +113,10 @@ app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 app.MapAuthEndpoints();
 
 // Minimal API endpoint for downloading save files directly
-app.MapGet("/api/instances/{id:int}/saves/{filename}", (int id, string filename, InstanceManager manager) => 
+app.MapGet("/api/instances/{id:int}/saves/{filename}", async (int id, string filename, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
 {
+    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
+
     // Sanitize filename to prevent directory traversal
     string safeFilename = Path.GetFileName(filename);
     string savesDir = manager.GetSavesDirectory(id);
@@ -126,8 +129,10 @@ app.MapGet("/api/instances/{id:int}/saves/{filename}", (int id, string filename,
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for downloading individual mod files
-app.MapGet("/api/instances/{id:int}/mods/{filename}", (int id, string filename, InstanceManager manager) => 
+app.MapGet("/api/instances/{id:int}/mods/{filename}", async (int id, string filename, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
 {
+    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
+
     string safeFilename = Path.GetFileName(filename);
     string modsDir = manager.GetModsDirectory(id);
     string filePath = Path.Combine(modsDir, safeFilename);
@@ -139,8 +144,10 @@ app.MapGet("/api/instances/{id:int}/mods/{filename}", (int id, string filename, 
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for downloading all mods as a zip
-app.MapGet("/api/instances/{id:int}/mods/downloadAll", (int id, InstanceManager manager) => 
+app.MapGet("/api/instances/{id:int}/mods/downloadAll", async (int id, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
 {
+    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
+
     string modsDir = manager.GetModsDirectory(id);
     if (!Directory.Exists(modsDir))
         return Results.NotFound();
@@ -156,23 +163,45 @@ app.MapGet("/api/instances/{id:int}/mods/downloadAll", (int id, InstanceManager 
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for listing all instances
-app.MapGet("/api/instances", (AppDbContext db, InstanceManager manager) => 
+app.MapGet("/api/instances", async (AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
 {
-    var instances = db.ServerInstances.Select(x => new 
+    var identityUser = await userManager.GetUserAsync(user);
+    if (identityUser == null) return Results.Unauthorized();
+    bool isGlobalAdmin = await userManager.IsInRoleAsync(identityUser, "Administrator");
+
+    var query = db.ServerInstances.AsQueryable();
+    List<FactorioLibrary.Models.UserServerAccess>? accessList = null;
+    
+    if (!isGlobalAdmin)
+    {
+        accessList = await db.UserServerAccesses
+            .Where(usa => usa.UserId == identityUser.Id)
+            .ToListAsync();
+            
+        var accessibleIds = accessList.Select(usa => usa.ServerInstanceId).ToList();
+        query = query.Where(si => accessibleIds.Contains(si.Id));
+    }
+    
+    var instancesList = await query.ToListAsync();
+
+    var instances = instancesList.Select(x => new 
     {
         x.Id,
         x.Name,
         x.Port,
         x.RconPort,
         IsRunning = manager.IsRunning(x.Id),
-        x.ActiveSaveName
+        x.ActiveSaveName,
+        AccessLevel = isGlobalAdmin ? "Admin" : accessList?.FirstOrDefault(a => a.ServerInstanceId == x.Id)?.AccessLevel.ToString() ?? "Unknown"
     }).ToList();
     return Results.Ok(instances);
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for listing saves for an instance
-app.MapGet("/api/instances/{id:int}/saves", async (int id, AppDbContext db, InstanceManager manager) => 
+app.MapGet("/api/instances/{id:int}/saves", async (int id, AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
 {
+    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
+
     var instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
     
@@ -189,8 +218,10 @@ app.MapGet("/api/instances/{id:int}/saves", async (int id, AppDbContext db, Inst
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for starting an instance
-app.MapPost("/api/instances/{id:int}/start", async (int id, AppDbContext db, InstanceManager manager) => 
+app.MapPost("/api/instances/{id:int}/start", async (int id, AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
 {
+    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, true)) return Results.Forbid();
+
     var instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
     
@@ -199,8 +230,10 @@ app.MapPost("/api/instances/{id:int}/start", async (int id, AppDbContext db, Ins
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for stopping an instance
-app.MapPost("/api/instances/{id:int}/stop", async (int id, AppDbContext db, InstanceManager manager) => 
+app.MapPost("/api/instances/{id:int}/stop", async (int id, AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
 {
+    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, true)) return Results.Forbid();
+
     var instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
     
@@ -209,8 +242,10 @@ app.MapPost("/api/instances/{id:int}/stop", async (int id, AppDbContext db, Inst
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for setting the active save
-app.MapPut("/api/instances/{id:int}/saves/active", async (int id, string saveName, AppDbContext db) => 
+app.MapPut("/api/instances/{id:int}/saves/active", async (int id, string saveName, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
 {
+    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, true)) return Results.Forbid();
+
     var instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
     
@@ -220,3 +255,23 @@ app.MapPut("/api/instances/{id:int}/saves/active", async (int id, string saveNam
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 app.Run();
+
+public static class ApiAuthHelper
+{
+    public static async Task<bool> HasAccessAsync(AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user, int instanceId, bool requireAdmin)
+    {
+        var identityUser = await userManager.GetUserAsync(user);
+        if (identityUser == null) return false;
+
+        bool isGlobalAdmin = await userManager.IsInRoleAsync(identityUser, "Administrator");
+        if (isGlobalAdmin) return true;
+
+        var access = await db.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == identityUser.Id && usa.ServerInstanceId == instanceId);
+        if (access == null) return false;
+        
+        if (requireAdmin && access.AccessLevel != FactorioLibrary.Models.ServerAccessLevel.Admin)
+            return false;
+
+        return true;
+    }
+}

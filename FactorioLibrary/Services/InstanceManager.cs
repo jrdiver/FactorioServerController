@@ -340,7 +340,7 @@ public class InstanceManager
         return null;
     }
 
-    public async Task<(bool Success, string Logs)> SyncModsWithSaveAsync(int instanceId, string saveName, string imageTag)
+    public async Task<(bool Success, string Logs)> SyncModsWithSaveAsync(int instanceId, string saveName, string imageTag, int retryCount = 0)
     {
         string containerName = $"factorio_sync_{instanceId}_{Guid.NewGuid().ToString().Substring(0, 8)}";
         string image = $"factoriotools/factorio:{imageTag}";
@@ -384,6 +384,48 @@ public class InstanceManager
 
             // If it crashed or had an error, it often outputs Error or fails to write
             bool success = !fullLog.Contains("Error", StringComparison.OrdinalIgnoreCase);
+
+            if (!success && retryCount < 5)
+            {
+                bool copiedRescueMod = false;
+                string basePath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? "/factorio" : _hostBaseMountPath.TrimEnd('/', '\\');
+                string globalPath = Path.Combine(basePath, "global_mods");
+                if (Directory.Exists(globalPath))
+                {
+                    var globalZips = Directory.GetFiles(globalPath, "*.zip");
+                    foreach (string zip in globalZips)
+                    {
+                        string zipName = Path.GetFileName(zip);
+                        int lastUnderscore = zipName.LastIndexOf('_');
+                        if (lastUnderscore > 0)
+                        {
+                            string modName = zipName.Substring(0, lastUnderscore);
+                            // If the error log mentions this mod
+                            if (fullLog.Contains(modName, StringComparison.OrdinalIgnoreCase) || fullLog.Contains(zipName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                string targetModsDir = Path.Combine(basePath, instanceId.ToString(), "mods");
+                                if (!Directory.Exists(targetModsDir)) Directory.CreateDirectory(targetModsDir);
+                                
+                                string targetFile = Path.Combine(targetModsDir, zipName);
+                                if (!File.Exists(targetFile))
+                                {
+                                    try
+                                    {
+                                        File.Copy(zip, targetFile, true);
+                                        copiedRescueMod = true;
+                                    }
+                                    catch {}
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if (copiedRescueMod)
+                {
+                    return await SyncModsWithSaveAsync(instanceId, saveName, imageTag, retryCount + 1);
+                }
+            }
 
             return (success, fullLog.Trim());
         }

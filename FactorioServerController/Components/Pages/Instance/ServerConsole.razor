@@ -93,30 +93,37 @@ else
             </div>
             
             <div class="bg-dark p-3 border-top border-secondary">
-                <div class="d-flex flex-wrap gap-2 mb-2">
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/time"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
-                        <i class="bi bi-clock me-1"></i> Time
-                    </button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/players"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
-                        <i class="bi bi-people me-1"></i> Players
-                    </button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/server-save"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
-                        <i class="bi bi-save me-1"></i> Save Server
-                    </button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/admins"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
-                        <i class="bi bi-shield-lock me-1"></i> Admins
-                    </button>
-                </div>
-                <form @onsubmit="SendRconCommand" class="d-flex gap-2">
-                    <input type="text" @bind="RconInput" @bind:event="oninput" 
-                           class="form-control bg-transparent text-white border-secondary flex-grow-1" 
-                           placeholder="Enter RCON command (e.g. time, players, save)..." 
-                           disabled="@(!InstanceManager.IsRunning(Instance!.Id))" />
-                           
-                    <button type="submit" class="btn btn-accent" disabled="@(!InstanceManager.IsRunning(Instance!.Id) || string.IsNullOrWhiteSpace(RconInput))">
-                        <span><i class="bi bi-send-fill me-2"></i>Send</span>
-                    </button>
-                </form>
+                @if (IsViewer)
+                {
+                    <div class="text-muted fst-italic">You have Viewer access to this server and cannot send RCON commands.</div>
+                }
+                else
+                {
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/time"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
+                            <i class="bi bi-clock me-1"></i> Time
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/players"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
+                            <i class="bi bi-people me-1"></i> Players
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/server-save"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
+                            <i class="bi bi-save me-1"></i> Save Server
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/admins"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
+                            <i class="bi bi-shield-lock me-1"></i> Admins
+                        </button>
+                    </div>
+                    <form @onsubmit="SendRconCommand" class="d-flex gap-2">
+                        <input type="text" @bind="RconInput" @bind:event="oninput" 
+                               class="form-control bg-transparent text-white border-secondary flex-grow-1" 
+                               placeholder="Enter RCON command (e.g. time, players, save)..." 
+                               disabled="@(!InstanceManager.IsRunning(Instance!.Id))" />
+                               
+                        <button type="submit" class="btn btn-accent" disabled="@(!InstanceManager.IsRunning(Instance!.Id) || string.IsNullOrWhiteSpace(RconInput))">
+                            <span><i class="bi bi-send-fill me-2"></i>Send</span>
+                        </button>
+                    </form>
+                }
             </div>
         </div>
     </div>
@@ -130,6 +137,7 @@ else
     private List<string> Logs = new();
     private string RconInput = "";
     private bool WrapLogs = false; // Default to no wrap as requested
+    private bool IsViewer = false;
     
     private MultiplexedStream? _logStream;
     private CancellationTokenSource _cts = new();
@@ -150,12 +158,13 @@ else
         bool isAdmin = await UserManager.IsInRoleAsync(user, "Administrator");
         if (!isAdmin)
         {
-            bool hasAccess = await DbContext.UserServerAccesses.AnyAsync(usa => usa.UserId == user.Id && usa.ServerInstanceId == Id);
-            if (!hasAccess)
+            UserServerAccess? access = await DbContext.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == user.Id && usa.ServerInstanceId == Id);
+            if (access == null)
             {
                 Navigation.NavigateTo("/");
                 return;
             }
+            IsViewer = access.AccessLevel == ServerAccessLevel.Viewer;
         }
 
         Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);

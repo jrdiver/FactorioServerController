@@ -233,10 +233,15 @@
         bool isAdmin = await UserManager.IsInRoleAsync(user, "Administrator");
         if (!isAdmin)
         {
-            bool hasAccess = await DbContext.UserServerAccesses.AnyAsync(usa => usa.UserId == user.Id && usa.ServerInstanceId == Id);
-            if (!hasAccess)
+            UserServerAccess? access = await DbContext.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == user.Id && usa.ServerInstanceId == Id);
+            if (access == null)
             {
                 Navigation.NavigateTo("/");
+                return;
+            }
+            if (access.AccessLevel == ServerAccessLevel.Viewer)
+            {
+                Navigation.NavigateTo($"/instance/{Id}");
                 return;
             }
         }

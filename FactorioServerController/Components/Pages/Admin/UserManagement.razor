@@ -72,7 +72,10 @@
                                                 ServerInstance? server = Servers.FirstOrDefault(s => s.Id == access.ServerInstanceId);
                                                 if (server != null)
                                                 {
-                                                    <span class="badge border border-secondary text-light">@server.Name</span>
+                                                    <span class="badge border border-secondary text-light">
+                                                        @server.Name
+                                                        <span class="text-muted ms-1">(@access.AccessLevel)</span>
+                                                    </span>
                                                 }
                                             }
                                         </div>
@@ -177,14 +180,23 @@
                     <div class="list-group">
                         @foreach (ServerInstance server in Servers)
                         {
-                            bool hasAccess = SelectedUserAccesses.Contains(server.Id);
-                            <label class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between align-items-center" style="cursor: pointer;">
+                            SelectedUserAccesses.TryGetValue(server.Id, out ServerAccessLevel currentAccessLevel);
+                            bool hasAccess = SelectedUserAccesses.ContainsKey(server.Id);
+                            string accessStr = hasAccess ? currentAccessLevel.ToString() : "None";
+
+                            <div class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between align-items-center">
                                 <div>
                                     <h6 class="mb-0">@server.Name</h6>
                                     <small class="text-muted">Port: @server.Port</small>
                                 </div>
-                                <input class="form-check-input mt-0" type="checkbox" checked="@hasAccess" @onchange="(e) => ToggleAccess(server.Id, e.Value)" style="width: 1.5em; height: 1.5em;" />
-                            </label>
+                                <select class="form-select form-select-sm bg-dark text-white border-secondary w-auto" 
+                                        value="@accessStr" 
+                                        @onchange="(e) => SetAccessLevel(server.Id, e.Value?.ToString())">
+                                    <option value="None">No Access</option>
+                                    <option value="Viewer">Viewer</option>
+                                    <option value="Admin">Admin</option>
+                                </select>
+                            </div>
                         }
                     </div>
                 </div>
@@ -210,7 +222,7 @@
     // Access Modal state
     private bool IsAccessModalOpen = false;
     private IdentityUser? SelectedUser;
-    private HashSet<int> SelectedUserAccesses = new();
+    private Dictionary<int, ServerAccessLevel> SelectedUserAccesses = new();
     private string? CurrentUserId;
 
     protected override async Task OnInitializedAsync()
@@ -287,8 +299,8 @@
     private async Task ShowAccessModal(IdentityUser user)
     {
         SelectedUser = user;
-        var accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == user.Id).Select(usa => usa.ServerInstanceId).ToListAsync();
-        SelectedUserAccesses = new HashSet<int>(accesses);
+        var accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == user.Id).ToListAsync();
+        SelectedUserAccesses = accesses.ToDictionary(a => a.ServerInstanceId, a => a.AccessLevel);
         IsAccessModalOpen = true;
     }
 
@@ -298,32 +310,36 @@
         SelectedUser = null;
     }
 
-    private async Task ToggleAccess(int serverId, object? checkedValue)
+    private async Task SetAccessLevel(int serverId, string? levelStr)
     {
-        if (SelectedUser == null) return;
+        if (SelectedUser == null || levelStr == null) return;
 
-        bool isChecked = (bool?)checkedValue ?? false;
-        
-        if (isChecked)
+        UserServerAccess? access = await DbContext.UserServerAccesses
+            .FirstOrDefaultAsync(usa => usa.UserId == SelectedUser.Id && usa.ServerInstanceId == serverId);
+
+        if (levelStr == "None")
         {
-            if (!SelectedUserAccesses.Contains(serverId))
-            {
-                DbContext.UserServerAccesses.Add(new UserServerAccess { UserId = SelectedUser.Id, ServerInstanceId = serverId });
-                await DbContext.SaveChangesAsync();
-                SelectedUserAccesses.Add(serverId);
-            }
-        }
-        else
-        {
-            UserServerAccess? access = await DbContext.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == SelectedUser.Id && usa.ServerInstanceId == serverId);
             if (access != null)
             {
                 DbContext.UserServerAccesses.Remove(access);
-                await DbContext.SaveChangesAsync();
                 SelectedUserAccesses.Remove(serverId);
             }
         }
-        
+        else if (Enum.TryParse(levelStr, out ServerAccessLevel newLevel))
+        {
+            if (access == null)
+            {
+                access = new UserServerAccess { UserId = SelectedUser.Id, ServerInstanceId = serverId, AccessLevel = newLevel };
+                DbContext.UserServerAccesses.Add(access);
+            }
+            else
+            {
+                access.AccessLevel = newLevel;
+            }
+            SelectedUserAccesses[serverId] = newLevel;
+        }
+
+        await DbContext.SaveChangesAsync();
         await LoadData(); // Refresh UI
     }
 

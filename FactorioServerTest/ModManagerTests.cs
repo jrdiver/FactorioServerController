@@ -7,7 +7,7 @@ namespace FactorioServerTest;
 public class ModManagerTests
 {
     [TestMethod]
-    public async Task GetModInfoAsync_ReturnsParsedModInfo()
+    public async Task GetCachedModInfoAsync_ReturnsParsedModInfo()
     {
         // Arrange
         MockHttpMessageHandler mockHandler = new();
@@ -29,7 +29,7 @@ public class ModManagerTests
         ModManager manager = new(null!, null!, httpClient);
 
         // Act
-        ModInfo? result = await manager.GetModInfoAsync("bobinserters");
+        ModInfo? result = await manager.GetCachedModInfoAsync("bobplates");
 
         // Assert
         Assert.IsNotNull(result);
@@ -44,7 +44,7 @@ public class ModManagerTests
     }
     
     [TestMethod]
-    public async Task GetModInfoAsync_ReturnsNullOnNotFound()
+    public async Task GetCachedModInfoAsync_ReturnsNullOnNotFound()
     {
         // Arrange
         MockHttpMessageHandler mockHandler = new();
@@ -53,7 +53,7 @@ public class ModManagerTests
         ModManager manager = new(null!, null!, httpClient);
 
         // Act
-        ModInfo? result = await manager.GetModInfoAsync("nonexistent-mod");
+        ModInfo? result = await manager.GetCachedModInfoAsync("nonexistent-mod");
 
         // Assert
         Assert.IsNull(result);

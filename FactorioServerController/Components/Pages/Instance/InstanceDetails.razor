@@ -45,6 +45,8 @@ else
 {
     bool isRunning = InstanceManager.IsRunning(Instance.Id);
 
+    <NavigationLock ConfirmExternalNavigation="IsUploading" OnBeforeInternalNavigation="OnBeforeInternalNavigation" />
+
     <div class="container-fluid py-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
@@ -56,24 +58,27 @@ else
             </div>
             
             <div class="d-flex gap-2">
-                @if (isRunning)
+                @if (!IsViewer)
                 {
-                    @if (IsStopping)
+                    @if (isRunning)
                     {
-                        <button class="btn btn-glass-secondary text-danger" disabled><span class="spinner-border spinner-border-sm me-2"></span>Stopping...</button>
+                        @if (IsStopping)
+                        {
+                            <button class="btn btn-glass-secondary text-danger" disabled><span class="spinner-border spinner-border-sm me-2"></span>Stopping...</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-glass-secondary text-danger" @onclick="StopServer"><i class="bi bi-stop-fill me-2"></i>Stop Server</button>
+                        }
+                    }
+                    else if (IsStarting)
+                    {
+                        <button class="btn btn-glass" disabled><span class="spinner-border spinner-border-sm me-2"></span>Starting...</button>
                     }
                     else
                     {
-                        <button class="btn btn-glass-secondary text-danger" @onclick="StopServer"><i class="bi bi-stop-fill me-2"></i>Stop Server</button>
+                        <button class="btn btn-glass" @onclick="StartServer"><i class="bi bi-play-fill me-2"></i>Start Server</button>
                     }
-                }
-                else if (IsStarting)
-                {
-                    <button class="btn btn-glass" disabled><span class="spinner-border spinner-border-sm me-2"></span>Starting...</button>
-                }
-                else
-                {
-                    <button class="btn btn-glass" @onclick="StartServer"><i class="bi bi-play-fill me-2"></i>Start Server</button>
                 }
             </div>
         </div>
@@ -90,6 +95,7 @@ else
                     
                     <EditForm Model="@Instance" OnValidSubmit="SaveChanges">
                         <DataAnnotationsValidator />
+                        <fieldset disabled="@IsViewer">
                         
                         <div class="mb-3">
                             <label class="form-label text-muted">Server Name</label>
@@ -141,8 +147,12 @@ else
                             {
                                 <span></span>
                             }
-                            <button type="submit" class="btn btn-glass"><i class="bi bi-save-fill me-2"></i>Save Changes</button>
+                            @if (!IsViewer)
+                            {
+                                <button type="submit" class="btn btn-glass"><i class="bi bi-save-fill me-2"></i>Save Changes</button>
+                            }
                         </div>
+                        </fieldset>
                     </EditForm>
                 </div>
 
@@ -150,20 +160,30 @@ else
                     <div class="d-flex justify-content-between align-items-center mb-4">
                         <h4 class="mb-0"><i class="bi bi-floppy me-2"></i>Saves Management</h4>
                         <div>
-                            <InputFile OnChange="UploadSaveFile" class="d-none" id="saveUpload" accept=".zip" />
-                            <button class="btn btn-glass-secondary" type="button" onclick="document.getElementById('saveUpload').click()" disabled="@IsUploading">
-                                @if (IsUploading)
-                                {
-                                    <span class="spinner-border spinner-border-sm me-2"></span>
-                                    <span>Uploading...</span>
-                                }
-                                else
-                                {
-                                    <i class="bi bi-upload me-2"></i><span>Upload Save</span>
-                                }
-                            </button>
+                            @if (!IsViewer)
+                            {
+                                <InputFile OnChange="UploadSaveFile" class="d-none" id="saveUpload" accept=".zip" />
+                                <button class="btn btn-glass-secondary" type="button" onclick="document.getElementById('saveUpload').click()" disabled="@IsUploading">
+                                    @if (IsUploading)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2"></span>
+                                        <span>Uploading... @UploadProgress%</span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-upload me-2"></i><span>Upload Save</span>
+                                    }
+                                </button>
+                            }
                         </div>
                     </div>
+                    
+                    @if (IsUploading)
+                    {
+                        <div class="progress mb-4" style="height: 10px; background-color: rgba(255,255,255,0.1);">
+                            <div class="progress-bar bg-accent progress-bar-striped progress-bar-animated" role="progressbar" style="width: @UploadProgress%"></div>
+                        </div>
+                    }
 
                     @if (HasCorruptedTempSave)
                     {
@@ -229,24 +249,30 @@ else
                                             </td>
                                             <td class="text-muted text-end">@FormatBytes(save.SizeBytes)</td>
                                             <td class="text-end">
-                                                @if (Instance?.ActiveSaveName == save.Name)
+                                                @if (!IsViewer)
                                                 {
-                                                    <button class="btn btn-sm btn-glass-secondary text-success me-2" @onclick="ClearActiveSave" title="Currently Active (Click to clear)">
-                                                        <i class="bi bi-star-fill"></i> Active
-                                                    </button>
-                                                }
-                                                else
-                                                {
-                                                    <button class="btn btn-sm btn-glass-secondary me-2" @onclick="() => SetActiveSave(save.Name)" title="Set as Active Save">
-                                                        <i class="bi bi-star"></i> Set Active
-                                                    </button>
+                                                    @if (Instance?.ActiveSaveName == save.Name)
+                                                    {
+                                                        <button class="btn btn-sm btn-glass-secondary text-success me-2" @onclick="ClearActiveSave" title="Currently Active (Click to clear)">
+                                                            <i class="bi bi-star-fill"></i> Active
+                                                        </button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button class="btn btn-sm btn-glass-secondary me-2" @onclick="() => SetActiveSave(save.Name)" title="Set as Active Save">
+                                                            <i class="bi bi-star"></i> Set Active
+                                                        </button>
+                                                    }
                                                 }
                                                 <a href="/api/instances/@Id/saves/@Uri.EscapeDataString(save.Name)" download class="btn btn-sm btn-glass-secondary me-2" title="Download">
                                                     <i class="bi bi-download"></i>
                                                 </a>
-                                                <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteSaveFile(save.Name)" title="Delete">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
+                                                @if (!IsViewer)
+                                                {
+                                                    <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteSaveFile(save.Name)" title="Delete">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                }
                                             </td>
                                         </tr>
                                     }
@@ -274,7 +300,10 @@ else
                     <div class="d-grid gap-2">
                         <a href="/instance/@Id/mods" class="btn btn-glass-secondary text-start"><i class="bi bi-puzzle me-2"></i>Manage Mods</a>
                         <a href="/instance/@Id/console" class="btn btn-glass-secondary text-start"><i class="bi bi-terminal me-2"></i>Server Console</a>
-                        <a href="/instance/@Id/settings" class="btn btn-glass-secondary text-start"><i class="bi bi-file-earmark-text me-2"></i>Edit server-settings.json</a>
+                        @if (!IsViewer)
+                        {
+                            <a href="/instance/@Id/settings" class="btn btn-glass-secondary text-start"><i class="bi bi-file-earmark-text me-2"></i>Edit server-settings.json</a>
+                        }
                         <AuthorizeView Roles="Administrator">
                             <Authorized>
                                 <hr class="border-secondary my-2" />
@@ -368,11 +397,13 @@ else
     private bool IsStopping = false;
     private bool IsUploading = false;
     private string? UploadError;
+    private int UploadProgress = 0;
     private bool ShowDeleteConfirmation = false;
     private bool IsDeleting = false;
     private bool ShowResetConfirmation = false;
     private bool ShowRconPassword = false;
     private bool HasCorruptedTempSave = false;
+    private bool IsViewer = false;
 
     private class SaveFileInfo
     {
@@ -399,12 +430,13 @@ else
         bool isAdmin = await UserManager.IsInRoleAsync(user, "Administrator");
         if (!isAdmin)
         {
-            bool hasAccess = await DbContext.UserServerAccesses.AnyAsync(usa => usa.UserId == user.Id && usa.ServerInstanceId == Id);
-            if (!hasAccess)
+            UserServerAccess? access = await DbContext.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == user.Id && usa.ServerInstanceId == Id);
+            if (access == null)
             {
                 Navigation.NavigateTo("/");
                 return;
             }
+            IsViewer = access.AccessLevel == ServerAccessLevel.Viewer;
         }
 
         Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
@@ -561,6 +593,18 @@ else
         }
     }
 
+    private async Task OnBeforeInternalNavigation(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
+    {
+        if (IsUploading)
+        {
+            bool isConfirmed = await JSRuntime.InvokeAsync<bool>("confirm", "A save file upload is currently in progress. If you leave this page, the upload will be cancelled. Are you sure you want to leave?");
+            if (!isConfirmed)
+            {
+                context.PreventNavigation();
+            }
+        }
+    }
+
     private void LoadSaveFiles()
     {
         try
@@ -604,6 +648,7 @@ else
         }
 
         IsUploading = true;
+        UploadProgress = 0;
         UploadError = null;
         StateHasChanged();
 
@@ -613,11 +658,26 @@ else
             if (!Directory.Exists(savesDir)) Directory.CreateDirectory(savesDir);
 
             string path = Path.Combine(savesDir, file.Name);
+            long totalBytes = file.Size;
+            long bytesRead = 0;
 
             // Allow up to 2GB max file size
             await using Stream stream = file.OpenReadStream(2147483648);
             await using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
-            await stream.CopyToAsync(fs);
+            
+            byte[] buffer = new byte[81920];
+            int read;
+            while ((read = await stream.ReadAsync(buffer)) > 0)
+            {
+                await fs.WriteAsync(buffer, 0, read);
+                bytesRead += read;
+                int newProgress = (int)((double)bytesRead / totalBytes * 100);
+                if (newProgress > UploadProgress)
+                {
+                    UploadProgress = newProgress;
+                    StateHasChanged();
+                }
+            }
 
             LoadSaveFiles(); // Refresh list
         }
