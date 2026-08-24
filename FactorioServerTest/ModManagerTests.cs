@@ -1,4 +1,5 @@
 using FactorioLibrary.Services;
+using Microsoft.Extensions.Configuration;
 using System.Net;
 
 namespace FactorioServerTest;
@@ -26,10 +27,12 @@ public class ModManagerTests
             ]
         }");
         HttpClient httpClient = new(mockHandler);
-        ModManager manager = new(null!, null!, httpClient);
+        
+        IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        ModManager manager = new(config, null!, httpClient);
 
         // Act
-        ModInfo? result = await manager.GetCachedModInfoAsync("bobplates");
+        ModInfo? result = await manager.GetCachedModInfoAsync("bobinserters", forceRefresh: true);
 
         // Assert
         Assert.IsNotNull(result);
@@ -50,10 +53,12 @@ public class ModManagerTests
         MockHttpMessageHandler mockHandler = new();
         mockHandler.ResponseToReturn.StatusCode = HttpStatusCode.NotFound;
         HttpClient httpClient = new(mockHandler);
-        ModManager manager = new(null!, null!, httpClient);
+        
+        IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        ModManager manager = new(config, null!, httpClient);
 
         // Act
-        ModInfo? result = await manager.GetCachedModInfoAsync("nonexistent-mod");
+        ModInfo? result = await manager.GetCachedModInfoAsync("nonexistent-mod", forceRefresh: true);
 
         // Assert
         Assert.IsNull(result);
