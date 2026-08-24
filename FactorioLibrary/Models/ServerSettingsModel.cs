@@ -67,6 +67,9 @@ namespace FactorioLibrary.Models
         [JsonPropertyName("auto_pause")]
         public bool AutoPause { get; set; } = true;
 
+        [JsonPropertyName("auto_pause_when_players_connect")]
+        public bool AutoPauseWhenPlayersConnect { get; set; } = true;
+
         [JsonPropertyName("only_admins_can_pause_the_game")]
         public bool OnlyAdminsCanPauseTheGame { get; set; } = true;
 

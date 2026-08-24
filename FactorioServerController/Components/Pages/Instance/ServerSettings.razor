@@ -164,6 +164,10 @@
                                     <input class="form-check-input" type="checkbox" id="autoPause" @bind="SettingsModel.AutoPause" />
                                     <label class="form-check-label text-white" for="autoPause">Auto Pause <small class="text-muted d-block">Pause the game when no players are connected</small></label>
                                 </div>
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="autoPauseConnect" @bind="SettingsModel.AutoPauseWhenPlayersConnect" />
+                                    <label class="form-check-label text-white" for="autoPauseConnect">Auto Pause When Connecting <small class="text-muted d-block">Pause the game while players are downloading the map</small></label>
+                                </div>
                                 <div class="form-check form-switch mb-3">
                                     <input class="form-check-input" type="checkbox" id="adminPause" @bind="SettingsModel.OnlyAdminsCanPauseTheGame" />
                                     <label class="form-check-label text-white" for="adminPause">Admins Only Pause <small class="text-muted d-block">Only admins can manually pause the game</small></label>
