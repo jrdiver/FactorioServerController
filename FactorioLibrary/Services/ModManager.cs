@@ -109,7 +109,7 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
         else
         {
             var parent = Directory.GetParent(_hostBaseMountPath.TrimEnd('/', '\\'))?.FullName ?? _hostBaseMountPath;
-            globalPath = Path.Combine(parent, "app-data", "global_mods");
+            globalPath = Path.Combine(parent, "global_mods");
         }
         if (!Directory.Exists(globalPath)) Directory.CreateDirectory(globalPath);
         return globalPath;

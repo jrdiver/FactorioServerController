@@ -13,6 +13,9 @@ public class InstanceManager
 {
     private readonly DockerClient _dockerClient;
     private readonly string _hostBaseMountPath;
+    private readonly string _internalBaseMountPath;
+    private readonly string _hostDataPath;
+    private readonly string _internalDataPath;
     private readonly RconService _rconService;
     private readonly IServiceScopeFactory _scopeFactory;
 
@@ -35,16 +38,32 @@ public class InstanceManager
 
         _dockerClient = new DockerClientConfiguration(dockerUri).CreateClient();
 
-        // This is the path ON THE HOST OS where we store all Factorio data
-        _hostBaseMountPath = string.IsNullOrEmpty(configuration.GetValue<string>("HOST_BASE_MOUNT_PATH")) 
-            ? (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "C:\\FactorioServers" : "/mnt/user/appdata/factorio_manager/servers")
-            : configuration.GetValue<string>("HOST_BASE_MOUNT_PATH")!;
+        // Single unified path on the host for all app-data and instances
+        _hostDataPath = configuration.GetValue<string>("HOST_DATA_PATH");
+        if (string.IsNullOrWhiteSpace(_hostDataPath))
+            _hostDataPath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? @"C:\Factorio" : "/data";
+
+        _hostBaseMountPath = Path.Combine(_hostDataPath, "instances");
+        
+        if (Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true")
+        {
+            _internalDataPath = "/data";
+            _internalBaseMountPath = "/data/instances";
+        }
+        else
+        {
+            _internalDataPath = _hostDataPath;
+            _internalBaseMountPath = _hostBaseMountPath;
+        }
 
         _healthCheckTimer = new Timer(async _ => await CheckContainerHealthAsync(), null, 5000, 5000);
 
         // Auto-discover any already running containers
         _ = InitializeRunningContainersAsync();
     }
+
+    private string GetLocalDataPath(int instanceId) => Path.Combine(_internalBaseMountPath, instanceId.ToString());
+    private string GetInstanceHostPath(int instanceId) => Path.Combine(_hostBaseMountPath, instanceId.ToString());
 
     private async Task CheckContainerHealthAsync()
     {
@@ -130,7 +149,7 @@ public class InstanceManager
             // but we MUST write the rconpw file before starting because factoriotools/factorio does not use env vars for it!
             try
             {
-                string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? $"/factorio/{instance.Id}" : instanceHostPath;
+                string localDataPath = GetLocalDataPath(instance.Id);
 
                 string configPath = System.IO.Path.Combine(localDataPath, "config");
                 System.IO.Directory.CreateDirectory(configPath);
@@ -313,8 +332,8 @@ public class InstanceManager
         }
 
         // 2. Delete host directory
-        string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
-        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? $"/factorio/{instanceId}" : instanceHostPath;
+        string instanceHostPath = GetInstanceHostPath(instanceId);
+        string localDataPath = GetLocalDataPath(instanceId);
 
         try
         {
@@ -376,7 +395,7 @@ public class InstanceManager
     {
         string containerName = $"factorio_sync_{instanceId}_{Guid.NewGuid().ToString().Substring(0, 8)}";
         string image = $"factoriotools/factorio:{imageTag}";
-        string instanceHostPath = $"{_hostBaseMountPath.TrimEnd('/', '\\')}/{instanceId}";
+        string instanceHostPath = GetInstanceHostPath(instanceId);
 
         try
         {
@@ -417,55 +436,12 @@ public class InstanceManager
             // If it crashed or had an error, it often outputs Error or fails to write
             bool success = !fullLog.Contains("Error", StringComparison.OrdinalIgnoreCase);
 
+            // ALWAYS check global_mods for any missing files after a sync (or during a failure to fix dependencies)
+            await ResolveMissingModsFromGlobalAsync(instanceId);
+            
             if (!success && retryCount < 5)
             {
-                bool copiedRescueMod = false;
-                bool inContainer = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
-                string globalPath;
-                if (inContainer)
-                {
-                    globalPath = "/data/global_mods";
-                }
-                else
-                {
-                    var parent = Directory.GetParent(_hostBaseMountPath.TrimEnd('/', '\\'))?.FullName ?? _hostBaseMountPath;
-                    globalPath = Path.Combine(parent, "app-data", "global_mods");
-                }
-                if (Directory.Exists(globalPath))
-                {
-                    var globalZips = Directory.GetFiles(globalPath, "*.zip");
-                    foreach (string zip in globalZips)
-                    {
-                        string zipName = Path.GetFileName(zip);
-                        int lastUnderscore = zipName.LastIndexOf('_');
-                        if (lastUnderscore > 0)
-                        {
-                            string modName = zipName.Substring(0, lastUnderscore);
-                            // If the error log mentions this mod
-                            if (fullLog.Contains(modName, StringComparison.OrdinalIgnoreCase) || fullLog.Contains(zipName, StringComparison.OrdinalIgnoreCase))
-                            {
-                                string targetModsDir = GetModsDirectory(instanceId);
-                                if (!Directory.Exists(targetModsDir)) Directory.CreateDirectory(targetModsDir);
-                                
-                                string targetFile = Path.Combine(targetModsDir, zipName);
-                                if (!File.Exists(targetFile))
-                                {
-                                    try
-                                    {
-                                        File.Copy(zip, targetFile, true);
-                                        copiedRescueMod = true;
-                                    }
-                                    catch {}
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                if (copiedRescueMod)
-                {
-                    return await SyncModsWithSaveAsync(instanceId, saveName, imageTag, retryCount + 1);
-                }
+                return await SyncModsWithSaveAsync(instanceId, saveName, imageTag, retryCount + 1);
             }
 
             return (success, fullLog.Trim());
@@ -476,10 +452,62 @@ public class InstanceManager
         }
     }
 
+    public async Task ResolveMissingModsFromGlobalAsync(int instanceId, Action<int, int, string>? progressCallback = null)
+    {
+        string globalPath = Path.Combine(_internalDataPath, "global_mods");
+        if (!Directory.Exists(globalPath)) return;
+
+        string targetModsDir = GetModsDirectory(instanceId);
+        if (!Directory.Exists(targetModsDir)) Directory.CreateDirectory(targetModsDir);
+
+        string modListPath = Path.Combine(targetModsDir, "mod-list.json");
+        if (!File.Exists(modListPath)) return;
+
+        string modListContent = await File.ReadAllTextAsync(modListPath);
+        var globalZips = Directory.GetFiles(globalPath, "*.zip");
+
+        var matchingZips = new List<string>();
+        foreach (string zip in globalZips)
+        {
+            string zipName = Path.GetFileName(zip);
+            int lastUnderscore = zipName.LastIndexOf('_');
+            if (lastUnderscore > 0)
+            {
+                string modName = zipName.Substring(0, lastUnderscore);
+                if (modListContent.Contains($"\"{modName}\""))
+                {
+                    matchingZips.Add(zip);
+                }
+            }
+        }
+
+        int total = matchingZips.Count;
+        int current = 0;
+
+        foreach (string zip in matchingZips)
+        {
+            current++;
+            string zipName = Path.GetFileName(zip);
+            string targetFile = Path.Combine(targetModsDir, zipName);
+
+            progressCallback?.Invoke(current, total, zipName);
+
+            if (!File.Exists(targetFile))
+            {
+                try { File.Copy(zip, targetFile, true); } catch {}
+            }
+            
+            if (progressCallback != null && current % 3 == 0)
+            {
+                await Task.Delay(1);
+            }
+        }
+    }
+
     public void FactoryResetConfigs(int instanceId)
     {
-        string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
-        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? $"/factorio/{instanceId}" : instanceHostPath;
+        string instanceHostPath = GetInstanceHostPath(instanceId);
+        string localDataPath = GetLocalDataPath(instanceId);
 
         string configPath = Path.Combine(localDataPath, "config");
         string playerDataPath = Path.Combine(localDataPath, "player-data.json");
@@ -548,23 +576,23 @@ public class InstanceManager
 
     public string GetSavesDirectory(int instanceId)
     {
-        string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
-        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? $"/factorio/{instanceId}" : instanceHostPath;
+        string instanceHostPath = GetInstanceHostPath(instanceId);
+        string localDataPath = GetLocalDataPath(instanceId);
 
         return Path.Combine(localDataPath, "saves");
     }
 
     public string GetModsDirectory(int instanceId)
     {
-        string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
-        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? $"/factorio/{instanceId}" : instanceHostPath;
+        string instanceHostPath = GetInstanceHostPath(instanceId);
+        string localDataPath = GetLocalDataPath(instanceId);
 
         return Path.Combine(localDataPath, "mods");
     }
 
     public string GetConfigDirectory(int instanceId)
     {
-        string instanceHostPath = Path.Combine(_hostBaseMountPath, instanceId.ToString());
+        string instanceHostPath = GetInstanceHostPath(instanceId);
         string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
             ? $"/factorio/{instanceId}" 
             : instanceHostPath;

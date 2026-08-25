@@ -8,12 +8,15 @@ using FactorioServerController.Components;
 using FactorioServerController.Components.Endpoints;
 using FactorioServerController.Auth;
 using Microsoft.AspNetCore.HttpOverrides;
+using System.Runtime.InteropServices;
 using System.Security.Claims;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // Ensure data directory exists for persistent storage
-string dataDir = Path.Combine(Directory.GetCurrentDirectory(), "data");
+string baseDataPath = builder.Configuration["HOST_DATA_PATH"];
+if (string.IsNullOrWhiteSpace(baseDataPath)) baseDataPath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? @"C:\Factorio" : "/data";
+string dataDir = Path.Combine(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? "/data" : baseDataPath, "app-data");
 if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
 
 // Add services to the container.

@@ -10,19 +10,11 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:8080
-      # Configure Data Protection keys to be stored in the mapped volume so logins survive restarts
-      - DataProtection__KeyPath=/data/keys
-      # Point the settings JSON file to the persistent data volume
-      - GlobalSettings__Path=/data/settings.json
       # Pass the host mount path down so the controller can spin up the Factorio servers in the right folder on the host!
-      - HOST_BASE_MOUNT_PATH=./factorio-instances
-      # Point the database to the persistent data volume
-      - ConnectionStrings__DefaultConnection=Data Source=/data/factorio_manager.db
+      - HOST_DATA_PATH=./factorio-data
     volumes:
-      # Map the application data (DB, settings.json, aspnet keys)
-      - ./app-data:/data
-      # Map the directory where Factorio server instances (saves, mods, configs) will be stored
-      - ./factorio-instances:/factorio
+      # Map the unified Factorio data folder (contains app-data/ and instances/)
+      - ./factorio-data:/data
       # Map the Docker socket so the controller can spin up the Factorio containers
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped

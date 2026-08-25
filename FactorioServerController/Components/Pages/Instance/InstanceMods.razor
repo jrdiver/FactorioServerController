@@ -2,6 +2,7 @@
 @using System.IO
 @using System.IO.Compression
 @using System.Text.Json
+@using FactorioLibrary
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
@@ -12,6 +13,7 @@
 @inject InstanceManager InstanceManager
 @inject ModManager ModManager
 @inject NavigationManager Navigation
+@inject FactorioWebApi WebApi
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<IdentityUser> UserManager
 @inject IJSRuntime JS
@@ -153,17 +155,13 @@ else
             {
                 <div class="alert alert-danger text-pre-wrap"><i class="bi bi-exclamation-triangle me-2"></i>@SyncError</div>
             }
-            @if (SyncSuccess)
+            @if (!string.IsNullOrEmpty(SuccessMessage))
             {
-                <div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>Successfully synced mod configuration with the active save file!</div>
+                <div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>@SuccessMessage</div>
             }
             @if (!string.IsNullOrEmpty(UpdateError))
             {
                 <div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>@UpdateError</div>
-            }
-            @if (!string.IsNullOrEmpty(UpdateSuccess))
-            {
-                <div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>@UpdateSuccess</div>
             }
             @if (!string.IsNullOrEmpty(UpdateProgress))
             {
@@ -307,7 +305,7 @@ else
     private List<ModFileInfo>? ModFiles;
     private bool IsUploading = false;
     private bool IsSyncing = false;
-    private bool SyncSuccess = false;
+    
     private string UploadProgress = "";
     private string? UploadError;
     private string? SyncError;
@@ -344,7 +342,7 @@ else
     private bool IsCheckingUpdates = false;
     private bool IsUpdating = false;
     private string? UpdateError;
-    private string? UpdateSuccess;
+    private string? SuccessMessage;
     private string? UpdateProgress;
     private string? UpdateProgressFraction;
     private bool IsViewer = false;
@@ -509,15 +507,27 @@ else
             }
         }
         
+        var checkableMods = ModFiles.Where(m => !m.IsBuiltIn && !m.IsConfig && !(string.IsNullOrEmpty(m.CurrentVersion) && !m.IsMissing)).ToList();
+        int total = checkableMods.Count;
+        int current = 0;
+        
         foreach (var mod in ModFiles)
         {
-            if (mod.IsBuiltIn || (string.IsNullOrEmpty(mod.CurrentVersion) && !mod.IsMissing)) continue;
+            if (mod.IsBuiltIn || mod.IsConfig || (string.IsNullOrEmpty(mod.CurrentVersion) && !mod.IsMissing)) continue;
+            
+            current++;
+            if (IsApplyingModpack || IsSyncing)
+            {
+                UpdateProgressFraction = $"{current}/{total}";
+                UpdateProgress = $"Checking mod portal ({UpdateProgressFraction}) {mod.ModName}...";
+                StateHasChanged();
+            }
             
             var info = await ModManager.GetCachedModInfoAsync(mod.ModName, forceRefresh: false);
             ApplyModUpdateData(mod, info, targetFactorioVersion);
             
             // Yield to prevent blocking the UI thread on large modpacks
-            if (ModFiles.IndexOf(mod) % 10 == 0)
+            if (current % 5 == 0)
             {
                 await Task.Delay(1);
             }
@@ -654,13 +664,13 @@ else
         
         IsUpdating = true;
         UpdateError = null;
-        UpdateSuccess = null;
+        SuccessMessage = null;
         StateHasChanged();
         
         var result = await ModManager.UpdateModAsync(Id, mod.ModName, mod.DownloadUrl, mod.NewFileName, mod.Name);
         if (result.success)
         {
-            UpdateSuccess = $"Successfully updated {mod.ModName} to {mod.LatestVersion}";
+            SuccessMessage = $"Successfully updated {mod.ModName} to {mod.LatestVersion}";
             LoadMods();
         }
         else
@@ -681,7 +691,10 @@ else
         
         IsUpdating = true;
         UpdateError = null;
-        UpdateSuccess = null;
+        if (!IsApplyingModpack && !IsSyncing)
+        {
+            SuccessMessage = null;
+        }
         UpdateProgress = $"Starting update of {updatable.Count} mods...";
         StateHasChanged();
         
@@ -706,7 +719,18 @@ else
         
         if (successCount > 0)
         {
-            UpdateSuccess = $"Successfully updated {successCount} mods!";
+            if (IsApplyingModpack)
+            {
+                SuccessMessage = $"Successfully applied modpack! Additionally, downloaded {successCount} mod updates from the Factorio Portal.";
+            }
+            else if (IsSyncing)
+            {
+                SuccessMessage = $"Successfully synced save! Additionally, downloaded {successCount} mod updates from the Factorio Portal.";
+            }
+            else
+            {
+                SuccessMessage = $"Successfully updated {successCount} mods!";
+            }
             LoadMods();
         }
         
@@ -811,7 +835,7 @@ else
         
         IsSyncing = true;
         SyncError = null;
-        SyncSuccess = false;
+        SuccessMessage = null;
         StateHasChanged();
 
         try
@@ -846,7 +870,7 @@ else
                 // Also manually extract mod-settings.dat since Factorio's native command doesn't do it
                 ExtractModSettingsFromSave(targetSave);
                 
-                SyncSuccess = true;
+                SuccessMessage = "Successfully synced mod configuration with the active save file!";
                 LoadMods(); // Reload the updated mod-list.json
             }
             else
@@ -928,14 +952,14 @@ else
                 SaveModListJson();
                 LoadMods();
                 
-                UpdateSuccess = "Successfully deleted all mods and settings!";
+                SuccessMessage = "Successfully deleted all mods and settings!";
                 UpdateError = null;
             }
         }
         catch (Exception ex)
         {
             UpdateError = $"Error deleting mods: {ex.Message}";
-            UpdateSuccess = null;
+            SuccessMessage = null;
         }
     }
 
@@ -979,7 +1003,7 @@ else
 
         IsApplyingModpack = true;
         SyncError = null;
-        SyncSuccess = false;
+        SuccessMessage = null;
         UpdateProgress = "Applying mod configuration...";
         StateHasChanged();
 
@@ -997,14 +1021,41 @@ else
                 await File.WriteAllBytesAsync(modSettingsPath, modpack.ModSettingsDat);
             }
 
-            SyncSuccess = true;
+            SuccessMessage = "Successfully applied modpack!";
             
-            if (Instance != null && !string.IsNullOrEmpty(modpack.TargetFactorioVersion) && Instance.AssignedVersion != modpack.TargetFactorioVersion)
+            if (Instance != null && !string.IsNullOrEmpty(modpack.TargetFactorioVersion))
             {
-                Instance.AssignedVersion = modpack.TargetFactorioVersion;
-                DbContext.ServerInstances.Update(Instance);
-                await DbContext.SaveChangesAsync();
+                string targetVersion = modpack.TargetFactorioVersion;
+                if (targetVersion != "latest" && targetVersion != "stable" && targetVersion.Count(c => c == '.') < 2)
+                {
+                    // Convert "2" or "2.0" to the highest specific patch "2.0.x" available
+                    try
+                    {
+                        var tags = await WebApi.GetDockerTagsAsync();
+                        var matchingTag = tags.FirstOrDefault(t => t.Tag.StartsWith($"{targetVersion}."));
+                        if (matchingTag != null)
+                        {
+                            targetVersion = matchingTag.Tag;
+                        }
+                    }
+                    catch { } // fallback to original if API fails
+                }
+
+                if (Instance.AssignedVersion != targetVersion)
+                {
+                    Instance.AssignedVersion = targetVersion;
+                    DbContext.ServerInstances.Update(Instance);
+                    await DbContext.SaveChangesAsync();
+                }
             }
+            
+            // Check global mods first!
+            await InstanceManager.ResolveMissingModsFromGlobalAsync(Id, (current, total, zipName) => 
+            {
+                UpdateProgressFraction = $"{current}/{total}";
+                UpdateProgress = $"Copying local cache ({UpdateProgressFraction}) {zipName}...";
+                InvokeAsync(StateHasChanged);
+            });
             
             // Reload mods and check updates
             LoadMods();
@@ -1035,7 +1086,7 @@ else
 
         IsSavingModpack = true;
         SyncError = null;
-        SyncSuccess = false;
+        SuccessMessage = null;
         StateHasChanged();
 
         try
@@ -1073,7 +1124,7 @@ else
             await DbContext.SaveChangesAsync();
 
             AvailableModpacks = await DbContext.Modpacks.ToListAsync();
-            SyncSuccess = true;
+            SuccessMessage = "Successfully saved Modpack!";
         }
         catch (Exception ex)
         {
