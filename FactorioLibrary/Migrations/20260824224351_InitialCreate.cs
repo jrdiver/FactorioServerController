@@ -1,11 +1,12 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace FactorioLibrary.Migrations
 {
     /// <inheritdoc />
-    public partial class AddIdentity : Migration
+    public partial class InitialCreate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -47,6 +48,42 @@ namespace FactorioLibrary.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AspNetUsers", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ServerInstances",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "INTEGER", nullable: false)
+                        .Annotation("Sqlite:Autoincrement", true),
+                    Name = table.Column<string>(type: "TEXT", maxLength: 100, nullable: false),
+                    Port = table.Column<int>(type: "INTEGER", nullable: false),
+                    RconPort = table.Column<int>(type: "INTEGER", nullable: false),
+                    RconPassword = table.Column<string>(type: "TEXT", maxLength: 100, nullable: false),
+                    ActiveSaveName = table.Column<string>(type: "TEXT", nullable: true),
+                    AssignedVersion = table.Column<string>(type: "TEXT", maxLength: 50, nullable: true),
+                    MaxPlayers = table.Column<int>(type: "INTEGER", nullable: false),
+                    Description = table.Column<string>(type: "TEXT", nullable: true),
+                    IgnoredMods = table.Column<string>(type: "TEXT", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ServerInstances", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "UserServerAccesses",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "INTEGER", nullable: false)
+                        .Annotation("Sqlite:Autoincrement", true),
+                    UserId = table.Column<string>(type: "TEXT", nullable: false),
+                    ServerInstanceId = table.Column<int>(type: "INTEGER", nullable: false),
+                    AccessLevel = table.Column<int>(type: "INTEGER", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_UserServerAccesses", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -155,6 +192,27 @@ namespace FactorioLibrary.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "UserApiKeys",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "INTEGER", nullable: false)
+                        .Annotation("Sqlite:Autoincrement", true),
+                    UserId = table.Column<string>(type: "TEXT", nullable: false),
+                    ApiKey = table.Column<string>(type: "TEXT", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_UserApiKeys", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_UserApiKeys_AspNetUsers_UserId",
+                        column: x => x.UserId,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
             migrationBuilder.CreateIndex(
                 name: "IX_AspNetRoleClaims_RoleId",
                 table: "AspNetRoleClaims",
@@ -191,6 +249,11 @@ namespace FactorioLibrary.Migrations
                 table: "AspNetUsers",
                 column: "NormalizedUserName",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UserApiKeys_UserId",
+                table: "UserApiKeys",
+                column: "UserId");
         }
 
         /// <inheritdoc />
@@ -210,6 +273,15 @@ namespace FactorioLibrary.Migrations
 
             migrationBuilder.DropTable(
                 name: "AspNetUserTokens");
+
+            migrationBuilder.DropTable(
+                name: "ServerInstances");
+
+            migrationBuilder.DropTable(
+                name: "UserApiKeys");
+
+            migrationBuilder.DropTable(
+                name: "UserServerAccesses");
 
             migrationBuilder.DropTable(
                 name: "AspNetRoles");

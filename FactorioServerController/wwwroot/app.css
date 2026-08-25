@@ -232,7 +232,7 @@ main {
         text-overflow: ellipsis;
     }
 
-@media (max-width: 640.98px) {
+@media (max-width: 767.98px) {
     .top-row {
         justify-content: space-between;
     }
@@ -242,7 +242,7 @@ main {
     }
 }
 
-@media (min-width: 641px) {
+@media (min-width: 768px) {
     .page {
         flex-direction: row;
     }
@@ -363,7 +363,7 @@ main {
     display: block;
 }
 
-@media (min-width: 641px) {
+@media (min-width: 768px) {
     .navbar-toggler {
         display: none;
     }

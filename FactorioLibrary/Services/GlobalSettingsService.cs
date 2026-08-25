@@ -1,5 +1,5 @@
-using System.Text.Json;
 using FactorioLibrary.Models;
+using System.Text.Json;
 
 namespace FactorioLibrary.Services;
 

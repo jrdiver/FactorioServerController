@@ -1,16 +1,11 @@
-using System.Collections.Concurrent;
-using System.Runtime.InteropServices;
 using Docker.DotNet;
 using Docker.DotNet.Models;
-using FactorioLibrary.Models;
 using FactorioLibrary.Data;
+using FactorioLibrary.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using System.Text.Json;
-using Docker.DotNet;
-using Docker.DotNet.Models;
-using FactorioLibrary.Models;
-using Microsoft.Extensions.Configuration;
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 
 namespace FactorioLibrary.Services;
 
@@ -26,6 +21,8 @@ public class InstanceManager
 
     // Cache stats for 2.5 seconds to prevent multiple clients from hammering Docker API
     private readonly ConcurrentDictionary<int, (DateTime FetchedAt, ServerStats Stats)> _statsCache = new();
+    
+    private readonly Timer _healthCheckTimer;
 
     public InstanceManager(IConfiguration configuration, RconService rconService, IServiceScopeFactory scopeFactory)
     {
@@ -39,11 +36,33 @@ public class InstanceManager
         _dockerClient = new DockerClientConfiguration(dockerUri).CreateClient();
 
         // This is the path ON THE HOST OS where we store all Factorio data
-        _hostBaseMountPath = configuration.GetValue<string>("HOST_BASE_MOUNT_PATH")
-            ?? (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "C:\\FactorioServers" : "/mnt/user/appdata/factorio_manager/servers");
+        _hostBaseMountPath = string.IsNullOrEmpty(configuration.GetValue<string>("HOST_BASE_MOUNT_PATH")) 
+            ? (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "C:\\FactorioServers" : "/mnt/user/appdata/factorio_manager/servers")
+            : configuration.GetValue<string>("HOST_BASE_MOUNT_PATH")!;
+
+        _healthCheckTimer = new Timer(async _ => await CheckContainerHealthAsync(), null, 5000, 5000);
 
         // Auto-discover any already running containers
         _ = InitializeRunningContainersAsync();
+    }
+
+    private async Task CheckContainerHealthAsync()
+    {
+        foreach (var kvp in _runningContainers.ToArray())
+        {
+            try
+            {
+                var c = await _dockerClient.Containers.InspectContainerAsync(kvp.Value);
+                if (!c.State.Running && !c.State.Restarting)
+                {
+                    _runningContainers.TryRemove(kvp.Key, out _);
+                }
+            }
+            catch
+            {
+                _runningContainers.TryRemove(kvp.Key, out _);
+            }
+        }
     }
 
     private async Task InitializeRunningContainersAsync()
@@ -139,12 +158,24 @@ public class InstanceManager
             bool hasSaves = Directory.Exists(savesDir) && Directory.GetFiles(savesDir, "*.zip").Any();
 
             string loadLatest = "false";
+            string generateNewSave = "false";
+            
             if (string.IsNullOrEmpty(instance.ActiveSaveName))
             {
                 if (hasSaves)
+                {
                     loadLatest = "true";
+                }
                 else
+                {
                     instance.ActiveSaveName = instance.Name + ".zip"; // just for this startup logic
+                    generateNewSave = "true";
+                }
+            }
+            else if (!hasSaves || !File.Exists(Path.Combine(savesDir, instance.ActiveSaveName)))
+            {
+                // If they have an ActiveSaveName specified but the file itself doesn't actually exist, generate it
+                generateNewSave = "true";
             }
 
             List<string> envVars =
@@ -152,7 +183,8 @@ public class InstanceManager
                 $"PORT={instance.Port}",
                 $"RCON_PORT={instance.RconPort}",
                 $"RCON_PASSWORD={instance.RconPassword}",
-                $"LOAD_LATEST_SAVE={loadLatest}"
+                $"LOAD_LATEST_SAVE={loadLatest}",
+                $"GENERATE_NEW_SAVE={generateNewSave}"
             ];
 
             if (!string.IsNullOrEmpty(instance.ActiveSaveName))
@@ -388,8 +420,17 @@ public class InstanceManager
             if (!success && retryCount < 5)
             {
                 bool copiedRescueMod = false;
-                string basePath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" ? "/factorio" : _hostBaseMountPath.TrimEnd('/', '\\');
-                string globalPath = Path.Combine(basePath, "global_mods");
+                bool inContainer = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
+                string globalPath;
+                if (inContainer)
+                {
+                    globalPath = "/data/global_mods";
+                }
+                else
+                {
+                    var parent = Directory.GetParent(_hostBaseMountPath.TrimEnd('/', '\\'))?.FullName ?? _hostBaseMountPath;
+                    globalPath = Path.Combine(parent, "app-data", "global_mods");
+                }
                 if (Directory.Exists(globalPath))
                 {
                     var globalZips = Directory.GetFiles(globalPath, "*.zip");
@@ -403,7 +444,7 @@ public class InstanceManager
                             // If the error log mentions this mod
                             if (fullLog.Contains(modName, StringComparison.OrdinalIgnoreCase) || fullLog.Contains(zipName, StringComparison.OrdinalIgnoreCase))
                             {
-                                string targetModsDir = Path.Combine(basePath, instanceId.ToString(), "mods");
+                                string targetModsDir = GetModsDirectory(instanceId);
                                 if (!Directory.Exists(targetModsDir)) Directory.CreateDirectory(targetModsDir);
                                 
                                 string targetFile = Path.Combine(targetModsDir, zipName);
@@ -486,8 +527,8 @@ public class InstanceManager
                                           
                     if (systemDelta > 0.0 && cpuDelta > 0.0)
                     {
-                        double onlineCpus = lastStats.CPUStats.OnlineCPUs;
-                        stats.CpuPercentage = (cpuDelta / systemDelta) * onlineCpus * 100.0;
+                        stats.CpuPercentage = (cpuDelta / systemDelta) * 100.0;
+                        stats.OnlineCpus = (int)lastStats.CPUStats.OnlineCPUs;
                     }
                 }
 

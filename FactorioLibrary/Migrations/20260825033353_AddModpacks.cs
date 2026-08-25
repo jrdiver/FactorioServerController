@@ -5,23 +5,25 @@
 namespace FactorioLibrary.Migrations
 {
     /// <inheritdoc />
-    public partial class AddUserServerAccess : Migration
+    public partial class AddModpacks : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "UserServerAccesses",
+                name: "Modpacks",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "INTEGER", nullable: false)
                         .Annotation("Sqlite:Autoincrement", true),
-                    UserId = table.Column<string>(type: "TEXT", nullable: false),
-                    ServerInstanceId = table.Column<int>(type: "INTEGER", nullable: false)
+                    Name = table.Column<string>(type: "TEXT", nullable: false),
+                    TargetFactorioVersion = table.Column<string>(type: "TEXT", nullable: false),
+                    ModListJson = table.Column<string>(type: "TEXT", nullable: false),
+                    ModSettingsDat = table.Column<byte[]>(type: "BLOB", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_UserServerAccesses", x => x.Id);
+                    table.PrimaryKey("PK_Modpacks", x => x.Id);
                 });
         }
 
@@ -29,7 +31,7 @@ namespace FactorioLibrary.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "UserServerAccesses");
+                name: "Modpacks");
         }
     }
 }

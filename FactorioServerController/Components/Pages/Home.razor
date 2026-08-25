@@ -1,12 +1,12 @@
 @page "/"
+@using FactorioLibrary
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
-@using FactorioLibrary.Services
-@using FactorioLibrary
 @using FactorioLibrary.Objects
-@using Microsoft.EntityFrameworkCore
+@using FactorioLibrary.Services
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
 @inject NavigationManager Navigation
@@ -65,7 +65,7 @@
     }
     else
     {
-        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
+        <div class="row row-cols-1 row-cols-lg-2 row-cols-xl-3 g-4">
             @foreach (ServerInstance instance in Instances)
             {
                 bool isRunning = InstanceManager.IsRunning(instance.Id);
@@ -81,12 +81,21 @@
                         
                         <div class="text-muted small mb-4 flex-grow-1">
                             <div class="mb-1"><i class="bi bi-hdd-fill me-2"></i>Port: <strong>@instance.Port</strong></div>
-                            <div class="mb-1"><i class="bi bi-terminal-fill me-2"></i>RCON: <strong>@instance.RconPort</strong></div>
+                            @if (!_viewerStatus.GetValueOrDefault(instance.Id))
+                            {
+                                <div class="mb-1"><i class="bi bi-terminal-fill me-2"></i>RCON: <strong>@instance.RconPort</strong></div>
+                            }
                             <div class="mb-1"><i class="bi bi-tag-fill me-2"></i>Version: <strong>@GetVersionDisplayName(instance.AssignedVersion)</strong></div>
                         </div>
 
-                        <div class="d-flex gap-2 mt-auto">
-                            @if (isRunning)
+                        <div class="d-flex flex-wrap gap-2 mt-auto">
+                            @if (_viewerStatus.GetValueOrDefault(instance.Id))
+                            {
+                                <button class="btn btn-glass-secondary flex-grow-1" disabled>
+                                    <i class="bi bi-eye-fill me-1"></i> View Only
+                                </button>
+                            }
+                            else if (isRunning)
                             {
                                 @if (_stoppingInstances.Contains(instance.Id))
                                 {
@@ -103,18 +112,18 @@
                             }
                             else
                             {
-                            @if (_startingInstances.Contains(instance.Id))
-                            {
-                                <button class="btn btn-glass flex-grow-1" disabled>
-                                    <span class="spinner-border spinner-border-sm me-1"></span> Starting...
-                                </button>
-                            }
-                            else
-                            {
-                                <button class="btn btn-glass flex-grow-1" @onclick="() => StartInstance(instance)">
-                                    <i class="bi bi-play-fill me-1"></i> Start
-                                </button>
-                            }
+                                @if (_startingInstances.Contains(instance.Id))
+                                {
+                                    <button class="btn btn-glass flex-grow-1" disabled>
+                                        <span class="spinner-border spinner-border-sm me-1"></span> Starting...
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-glass flex-grow-1" @onclick="() => StartInstance(instance)">
+                                        <i class="bi bi-play-fill me-1"></i> Start
+                                    </button>
+                                }
                             }
                             <a href="/instance/@instance.Id/console" class="btn btn-glass-secondary text-accent" title="Server Console">
                                 <i class="bi bi-terminal-fill"></i>
@@ -133,6 +142,7 @@
     private List<DockerTagInfo> AvailableVersions = new();
     private HashSet<int> _startingInstances = new();
     private HashSet<int> _stoppingInstances = new();
+    private Dictionary<int, bool> _viewerStatus = new();
     private PeriodicTimer? _timer;
     private CancellationTokenSource _cts = new();
     private string? DashboardAlert;
@@ -182,17 +192,28 @@
         if (isAdmin)
         {
             Instances = await DbContext.ServerInstances.ToListAsync();
+            foreach(var instance in Instances)
+            {
+                _viewerStatus[instance.Id] = false;
+            }
         }
         else
         {
-            List<int> allowedServerIds = await DbContext.UserServerAccesses
+            var accesses = await DbContext.UserServerAccesses
                 .Where(usa => usa.UserId == user.Id)
-                .Select(usa => usa.ServerInstanceId)
                 .ToListAsync();
+                
+            List<int> allowedServerIds = accesses.Select(usa => usa.ServerInstanceId).ToList();
                 
             Instances = await DbContext.ServerInstances
                 .Where(s => allowedServerIds.Contains(s.Id))
                 .ToListAsync();
+                
+            foreach(var instance in Instances)
+            {
+                var access = accesses.FirstOrDefault(a => a.ServerInstanceId == instance.Id);
+                _viewerStatus[instance.Id] = access?.AccessLevel == ServerAccessLevel.Viewer;
+            }
         }
         
         try

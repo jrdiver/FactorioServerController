@@ -48,7 +48,7 @@
 
             @if (OnlineCount == 0)
             {
-                <div class="alert alert-secondary bg-dark border-secondary">
+                <div class="alert alert-secondary bg-dark border-secondary text-light">
                     <i class="bi bi-info-circle me-2"></i> No servers are currently running.
                 </div>
             }
@@ -61,9 +61,9 @@
                             <h6 class="text-muted mb-3"><i class="bi bi-cpu me-2"></i>Total CPU Usage</h6>
                             <h2 class="text-white mb-3">@TotalCpu.ToString("F1")%</h2>
                             <div class="progress bg-secondary" style="height: 10px;">
-                                <div class="progress-bar @(TotalCpu > (OnlineCount * 80) ? "bg-danger" : "bg-primary")" role="progressbar" style="width: @(Math.Min(100, TotalCpu / Math.Max(1, OnlineCount)))%"></div>
+                                <div class="progress-bar @(TotalCpu > 80 ? "bg-danger" : "bg-primary")" role="progressbar" style="width: @(Math.Min(100, TotalCpu))%"></div>
                             </div>
-                            <small class="text-muted mt-2 d-block">Across @OnlineCount containers<br/>(100% = 1 CPU Core)</small>
+                            <small class="text-muted mt-2 d-block">Across @OnlineCount containers<br/>(Total system CPU usage over @MaxCpus cores)</small>
                         </div>
                     </div>
 
@@ -117,6 +117,7 @@
     private double TotalRamMb = 0;
     private double TotalLimitMb = 0;
     private int TotalPlayers = 0;
+    private int MaxCpus = 0;
     private List<string> AllPlayers = [];
     private bool _isLoadingStats = true;
 
@@ -176,6 +177,7 @@
         double cpu = 0;
         double ram = 0;
         double limit = 0;
+        int maxCpus = 0;
         List<string> players = [];
 
         foreach (ServerInstance instance in Instances)
@@ -189,6 +191,7 @@
                     cpu += stats.CpuPercentage;
                     ram += stats.RamUsageMb;
                     limit += stats.RamLimitMb > 0 ? stats.RamLimitMb : stats.RamUsageMb; // Fallback if no limit
+                    maxCpus = Math.Max(maxCpus, stats.OnlineCpus);
                     
                     if (stats.OnlinePlayers != null)
                     {
@@ -205,6 +208,7 @@
         TotalCpu = cpu;
         TotalRamMb = ram;
         TotalLimitMb = limit;
+        MaxCpus = maxCpus;
         AllPlayers = players;
         TotalPlayers = players.Count;
     }

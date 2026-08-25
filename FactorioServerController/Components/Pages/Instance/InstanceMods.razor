@@ -1,15 +1,13 @@
 @page "/instance/{Id:int}/mods"
+@using System.IO
+@using System.IO.Compression
+@using System.Text.Json
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
-@using FactorioLibrary
-@using FactorioLibrary.Objects
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
-@using System.Text.Json
-@using System.IO
-@using System.IO.Compression
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
 @inject ModManager ModManager
@@ -71,12 +69,49 @@ else
                                 <i class="bi bi-arrow-repeat me-2"></i><span>Sync from Save</span>
                             }
                         </button>
+                        <div class="dropdown d-inline-block me-3">
+                            <button class="btn btn-glass-secondary dropdown-toggle" type="button" @onclick="() => _showModpackDropdown = !_showModpackDropdown" @onfocusout="() => Task.Delay(200).ContinueWith(_ => { _showModpackDropdown = false; InvokeAsync(StateHasChanged); })" aria-expanded="@(_showModpackDropdown ? "true" : "false")" disabled="@IsApplyingModpack">
+                                @if (IsApplyingModpack)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    <span>Applying... @(!string.IsNullOrEmpty(UpdateProgressFraction) ? $"({UpdateProgressFraction})" : "")</span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-box2 me-2"></i><span>Apply Modpack</span>
+                                }
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-dark shadow @(_showModpackDropdown ? "show" : "")" style="@(_showModpackDropdown ? "display: block; position: absolute; inset: 0px auto auto 0px; margin: 0px; transform: translate3d(0px, 40px, 0px);" : "")">
+                                @if (AvailableModpacks == null || !AvailableModpacks.Any())
+                                {
+                                    <li><span class="dropdown-item text-muted">No Modpacks Available</span></li>
+                                }
+                                else
+                                {
+                                    @foreach (var modpack in AvailableModpacks)
+                                    {
+                                        <li><button class="dropdown-item" type="button" @onclick="() => { _showModpackDropdown = false; ApplyModpack(modpack); }">@modpack.Name</button></li>
+                                    }
+                                }
+                            </ul>
+                        </div>
+                        <button class="btn btn-glass-secondary me-3" @onclick="SaveAsModpack" disabled="@IsSavingModpack">
+                            @if (IsSavingModpack)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span><span>Saving...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-floppy me-2"></i><span>Save as Modpack</span>
+                            }
+                        </button>
                         @if (ModFiles?.Any(m => m.HasUpdateAvailable && !m.IsIgnored) == true)
                         {
                             <button class="btn btn-glass me-3" @onclick="UpdateAllMods" disabled="@IsUpdating">
                                 @if (IsUpdating)
                                 {
-                                    <span class="spinner-border spinner-border-sm me-2"></span><span>Updating...</span>
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    <span>Updating... @(!string.IsNullOrEmpty(UpdateProgressFraction) ? $"({UpdateProgressFraction})" : "")</span>
                                 }
                                 else
                                 {
@@ -85,7 +120,7 @@ else
                             </button>
                         }
 
-                        <InputFile OnChange="UploadModFiles" class="d-none" id="modUpload" accept=".zip,.json" multiple />
+                        <InputFile OnChange="UploadModFiles" class="d-none" id="modUpload" accept=".zip,.json,.dat" multiple />
                         <button class="btn btn-glass me-3" type="button" onclick="document.getElementById('modUpload').click()" disabled="@IsUploading">
                             @if (IsUploading)
                             {
@@ -130,6 +165,13 @@ else
             {
                 <div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>@UpdateSuccess</div>
             }
+            @if (!string.IsNullOrEmpty(UpdateProgress))
+            {
+                <div class="alert alert-info d-flex align-items-center">
+                    <span class="spinner-border spinner-border-sm me-3"></span>
+                    <span>@UpdateProgress</span>
+                </div>
+            }
 
             @if (ModFiles == null)
             {
@@ -160,19 +202,28 @@ else
                                 <tr>
                                     <td>
                                         <div class="d-flex align-items-center">
-                                            <div class="form-check form-switch fs-5 mb-0 me-2">
-                                                <input class="form-check-input @(mod.IsEnabled ? "bg-success border-success" : "bg-danger border-danger")" type="checkbox" checked="@mod.IsEnabled" @onchange="@(e => ToggleMod(mod, (bool)(e.Value ?? false)))" disabled="@IsViewer">
-                                            </div>
-                                            @if (!mod.IsBuiltIn && !IsViewer)
+                                            @if (!mod.IsConfig)
                                             {
-                                                <button class="btn btn-sm btn-link p-0 text-@(mod.IsIgnored ? "warning" : "secondary")" @onclick="() => TogglePin(mod)" title="@(mod.IsIgnored ? "Unpin Mod" : "Pin Mod (Prevent Updates)")">
-                                                    <i class="bi @(mod.IsIgnored ? "bi-pin-angle-fill" : "bi-pin-angle") fs-5"></i>
-                                                </button>
+                                                <div class="form-check form-switch fs-5 mb-0 me-2">
+                                                    <input class="form-check-input @(mod.IsEnabled ? "bg-success border-success" : "bg-danger border-danger")" type="checkbox" checked="@mod.IsEnabled" @onchange="@(e => ToggleMod(mod, (bool)(e.Value ?? false)))" disabled="@IsViewer">
+                                                </div>
+                                                @if (!mod.IsBuiltIn && !IsViewer)
+                                                {
+                                                    <button class="btn btn-sm btn-link p-0 text-@(mod.IsIgnored ? "warning" : "secondary")" @onclick="() => TogglePin(mod)" title="@(mod.IsIgnored ? "Unpin Mod" : "Pin Mod (Prevent Updates)")">
+                                                        <i class="bi @(mod.IsIgnored ? "bi-pin-angle-fill" : "bi-pin-angle") fs-5"></i>
+                                                    </button>
+                                                }
                                             }
                                         </div>
                                     </td>
                                     <td>
-                                        @if (mod.IsBuiltIn)
+                                        @if (mod.IsConfig)
+                                        {
+                                            <i class="bi bi-file-earmark-code text-secondary me-2"></i>
+                                            <span class="text-white fw-bold">@mod.Name</span>
+                                            <span class="badge bg-secondary ms-2">Configuration</span>
+                                        }
+                                        else if (mod.IsBuiltIn)
                                         {
                                             <i class="bi bi-box-seam text-accent me-2"></i>
                                             <span class="text-white @(mod.IsEnabled ? "" : "text-muted")">@mod.ModName <span class="badge bg-secondary ms-2">Built-in</span></span>
@@ -227,7 +278,7 @@ else
                                                     <i class="bi bi-cloud-arrow-down"></i>
                                                 </a>
                                             }
-                                            @if (!IsViewer)
+                                            @if (!IsViewer && !mod.IsConfig)
                                             {
                                                 <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteModWithConfirm(mod)" title="Delete Mod">
                                                     <i class="bi bi-trash"></i>
@@ -261,6 +312,11 @@ else
     private string? UploadError;
     private string? SyncError;
     private ModList _modList = new ModList();
+    
+    private List<FactorioLibrary.Models.Modpack>? AvailableModpacks;
+    private bool IsApplyingModpack = false;
+    private bool IsSavingModpack = false;
+    private bool _showModpackDropdown = false;
 
     private class ModFileInfo
     {
@@ -277,6 +333,7 @@ else
         public bool IsIgnored { get; set; }
         public bool IsMissing { get; set; }
         public bool IsDeprecated { get; set; }
+        public bool IsConfig { get; set; }
     }
 
     private static readonly HashSet<string> BuiltInMods = new(StringComparer.OrdinalIgnoreCase) 
@@ -288,6 +345,8 @@ else
     private bool IsUpdating = false;
     private string? UpdateError;
     private string? UpdateSuccess;
+    private string? UpdateProgress;
+    private string? UpdateProgressFraction;
     private bool IsViewer = false;
 
     protected override async Task OnInitializedAsync()
@@ -319,6 +378,8 @@ else
             Navigation.NavigateTo("/");
             return;
         }
+
+        AvailableModpacks = await DbContext.Modpacks.ToListAsync();
 
         LoadMods();
         await UpdateModCacheData();
@@ -358,9 +419,23 @@ else
                     SizeBytes = f.Length,
                     IsEnabled = _modList.Mods.FirstOrDefault(m => string.Equals(m.Name, GetModNameFromFilename(f.Name), StringComparison.OrdinalIgnoreCase))?.Enabled ?? false,
                     IsBuiltIn = false,
-                    IsIgnored = Instance.IgnoredMods.Contains(GetModNameFromFilename(f.Name))
+                    IsIgnored = Instance?.IgnoredMods.Contains(GetModNameFromFilename(f.Name)) ?? false
                 })
                 .ToList();
+
+            var configFiles = dirInfo.GetFiles().Where(f => f.Name.Equals("mod-list.json", StringComparison.OrdinalIgnoreCase) || f.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
+            foreach (var cfg in configFiles)
+            {
+                ModFiles.Add(new ModFileInfo
+                {
+                    Name = cfg.Name,
+                    ModName = cfg.Name,
+                    SizeBytes = cfg.Length,
+                    IsEnabled = true,
+                    IsBuiltIn = false,
+                    IsConfig = true
+                });
+            }
 
             foreach (var mod in _modList.Mods)
             {
@@ -379,7 +454,7 @@ else
                 }
             }
 
-            ModFiles = ModFiles.OrderBy(m => m.ModName).ToList();
+            ModFiles = ModFiles.OrderByDescending(m => m.IsConfig).ThenBy(m => m.ModName).ToList();
         }
         catch (Exception)
         {
@@ -440,6 +515,12 @@ else
             
             var info = await ModManager.GetCachedModInfoAsync(mod.ModName, forceRefresh: false);
             ApplyModUpdateData(mod, info, targetFactorioVersion);
+            
+            // Yield to prevent blocking the UI thread on large modpacks
+            if (ModFiles.IndexOf(mod) % 10 == 0)
+            {
+                await Task.Delay(1);
+            }
         }
     }
 
@@ -601,12 +682,18 @@ else
         IsUpdating = true;
         UpdateError = null;
         UpdateSuccess = null;
+        UpdateProgress = $"Starting update of {updatable.Count} mods...";
         StateHasChanged();
         
         int successCount = 0;
         foreach (var mod in updatable)
         {
             if (string.IsNullOrEmpty(mod.DownloadUrl)) continue;
+            
+            UpdateProgressFraction = $"{successCount + 1}/{updatable.Count}";
+            UpdateProgress = $"Updating ({UpdateProgressFraction}) {mod.ModName}...";
+            StateHasChanged();
+            await Task.Delay(1);
             
             var result = await ModManager.UpdateModAsync(Id, mod.ModName, mod.DownloadUrl, mod.NewFileName, mod.Name);
             if (result.success) successCount++;
@@ -623,6 +710,8 @@ else
             LoadMods();
         }
         
+        UpdateProgress = null;
+        UpdateProgressFraction = null;
         IsUpdating = false;
         StateHasChanged();
     }
@@ -662,6 +751,15 @@ else
                     await using Stream jsonStream = file.OpenReadStream(2147483648);
                     await using FileStream jsonFs = new FileStream(modListPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
                     await jsonStream.CopyToAsync(jsonFs);
+                    continue;
+                }
+                
+                if (file.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase))
+                {
+                    string modSettingsPath = Path.Combine(modsDir, "mod-settings.dat");
+                    await using Stream datStream = file.OpenReadStream(2147483648);
+                    await using FileStream datFs = new FileStream(modSettingsPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+                    await datStream.CopyToAsync(datFs);
                     continue;
                 }
 
@@ -863,7 +961,7 @@ else
 
     private string FormatBytes(long bytes)
     {
-        string[] suffixes = { "B", "KB", "MB", "GB" };
+        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
         int counter = 0;
         decimal number = (decimal)bytes;
         while (Math.Round(number / 1024) >= 1)
@@ -872,5 +970,119 @@ else
             counter++;
         }
         return string.Format("{0:n1} {1}", number, suffixes[counter]);
+    }
+
+    private async Task ApplyModpack(FactorioLibrary.Models.Modpack modpack)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to apply the '{modpack.Name}' modpack? This will overwrite your current mod-list.json and mod-settings.dat, and you will need to download missing mods.");
+        if (!confirmed) return;
+
+        IsApplyingModpack = true;
+        SyncError = null;
+        SyncSuccess = false;
+        UpdateProgress = "Applying mod configuration...";
+        StateHasChanged();
+
+        try
+        {
+            string modsDir = InstanceManager.GetModsDirectory(Id);
+            if (!Directory.Exists(modsDir)) Directory.CreateDirectory(modsDir);
+
+            string modListPath = Path.Combine(modsDir, "mod-list.json");
+            await File.WriteAllTextAsync(modListPath, modpack.ModListJson);
+
+            if (modpack.ModSettingsDat != null && modpack.ModSettingsDat.Length > 0)
+            {
+                string modSettingsPath = Path.Combine(modsDir, "mod-settings.dat");
+                await File.WriteAllBytesAsync(modSettingsPath, modpack.ModSettingsDat);
+            }
+
+            SyncSuccess = true;
+            
+            if (Instance != null && !string.IsNullOrEmpty(modpack.TargetFactorioVersion) && Instance.AssignedVersion != modpack.TargetFactorioVersion)
+            {
+                Instance.AssignedVersion = modpack.TargetFactorioVersion;
+                DbContext.ServerInstances.Update(Instance);
+                await DbContext.SaveChangesAsync();
+            }
+            
+            // Reload mods and check updates
+            LoadMods();
+            await UpdateModCacheData();
+            
+            // Auto-trigger an update for all missing mods (so it acts like a true modpack sync)
+            if (ModFiles != null && ModFiles.Any(m => m.IsMissing || m.HasUpdateAvailable))
+            {
+                await UpdateAllMods();
+            }
+        }
+        catch (Exception ex)
+        {
+            SyncError = $"Failed to apply modpack: {ex.Message}";
+        }
+        finally
+        {
+            UpdateProgress = null;
+            IsApplyingModpack = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveAsModpack()
+    {
+        string modpackName = await JS.InvokeAsync<string>("prompt", "Enter a name for this new Modpack:");
+        if (string.IsNullOrWhiteSpace(modpackName)) return;
+
+        IsSavingModpack = true;
+        SyncError = null;
+        SyncSuccess = false;
+        StateHasChanged();
+
+        try
+        {
+            string modsDir = InstanceManager.GetModsDirectory(Id);
+            string modListPath = Path.Combine(modsDir, "mod-list.json");
+            string modSettingsPath = Path.Combine(modsDir, "mod-settings.dat");
+
+            string jsonContent = "";
+            byte[]? datContent = null;
+
+            if (File.Exists(modListPath))
+            {
+                jsonContent = await File.ReadAllTextAsync(modListPath);
+            }
+            else
+            {
+                throw new Exception("mod-list.json not found. Ensure the server has been run at least once to generate it.");
+            }
+
+            if (File.Exists(modSettingsPath))
+            {
+                datContent = await File.ReadAllBytesAsync(modSettingsPath);
+            }
+
+            var modpack = new FactorioLibrary.Models.Modpack
+            {
+                Name = modpackName,
+                TargetFactorioVersion = Instance?.AssignedVersion ?? "latest",
+                ModListJson = jsonContent,
+                ModSettingsDat = datContent
+            };
+
+            DbContext.Modpacks.Add(modpack);
+            await DbContext.SaveChangesAsync();
+
+            AvailableModpacks = await DbContext.Modpacks.ToListAsync();
+            SyncSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            SyncError = $"Failed to save modpack: {ex.Message}";
+        }
+        finally
+        {
+            IsSavingModpack = false;
+            StateHasChanged();
+        }
     }
 }

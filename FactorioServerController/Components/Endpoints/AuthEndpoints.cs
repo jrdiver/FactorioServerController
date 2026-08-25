@@ -21,7 +21,7 @@ public static class AuthEndpoints
                     return Results.Redirect("/");
             }
             return Results.Redirect("/login?error=Invalid credentials");
-        }).DisableAntiforgery(); // In a real app we'd use antiforgery, but for simplicity in Blazor forms
+        });
 
         group.MapPost("/setup", async ([FromForm] string username, [FromForm] string password, [FromForm] string confirmPassword, UserManager<IdentityUser> userManager, RoleManager<IdentityRole> roleManager, SignInManager<IdentityUser> signInManager, AppDbContext db) =>
         {
@@ -54,13 +54,13 @@ public static class AuthEndpoints
             }
             
             return Results.Redirect($"/setup?error={Uri.EscapeDataString(result.Errors.FirstOrDefault()?.Description ?? "Error")}");
-        }).DisableAntiforgery();
+        });
 
         group.MapPost("/logout", async (SignInManager<IdentityUser> signInManager) =>
         {
             await signInManager.SignOutAsync();
             return Results.Redirect("/login");
-        }).DisableAntiforgery();
+        });
 
         group.MapPost("/change-password", async ([FromForm] string currentPassword, [FromForm] string newPassword, [FromForm] string confirmPassword, UserManager<IdentityUser> userManager, SignInManager<IdentityUser> signInManager, System.Security.Claims.ClaimsPrincipal principal) =>
         {
@@ -79,6 +79,6 @@ public static class AuthEndpoints
             }
             
             return Results.Redirect($"/settings?error={Uri.EscapeDataString(result.Errors.FirstOrDefault()?.Description ?? "Error changing password")}");
-        }).RequireAuthorization().DisableAntiforgery();
+        }).RequireAuthorization();
     }
 }

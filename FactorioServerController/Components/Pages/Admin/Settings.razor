@@ -80,7 +80,7 @@
             </Authorized>
         </AuthorizeView>
         
-        <div class="col-lg-4">
+        <div class="@(IsAdmin ? "col-lg-4" : "col-md-10 col-lg-8 col-xl-6")">
             <div class="glass-card mb-4 border border-primary border-opacity-50">
                 <h4 class="mb-4 text-primary"><i class="bi bi-key-fill me-2"></i>API Access</h4>
                 <p class="text-muted small mb-3">
@@ -136,6 +136,7 @@
                 }
 
                 <form method="post" action="/api/auth/change-password">
+                    <AntiforgeryToken />
                     <div class="mb-3">
                         <label class="form-label text-muted">Current Password</label>
                         <input type="password" name="currentPassword" class="form-control bg-dark text-white border-secondary" required />
@@ -161,7 +162,8 @@
     private GlobalSettings AppSettings = new();
     private bool ShowSaveSuccess = false;
     private bool ShowKeySuccess = false;
-    private string UserApiKey = "";
+    private string? UserApiKey;
+    private bool IsAdmin = false;
     private IdentityUser? CurrentUser;
 
     protected override async Task OnInitializedAsync()
@@ -170,6 +172,7 @@
         
         AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
+        IsAdmin = user.IsInRole("Administrator");
         
         if (user.Identity?.IsAuthenticated == true)
         {

@@ -9,6 +9,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<ServerInstance> ServerInstances { get; set; }
     public DbSet<UserApiKey> UserApiKeys { get; set; }
     public DbSet<UserServerAccess> UserServerAccesses { get; set; }
+    public DbSet<Modpack> Modpacks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

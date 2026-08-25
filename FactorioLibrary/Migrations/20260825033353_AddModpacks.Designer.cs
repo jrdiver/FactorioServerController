@@ -11,14 +11,40 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FactorioLibrary.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260629041919_AddIgnoredMods")]
-    partial class AddIgnoredMods
+    [Migration("20260825033353_AddModpacks")]
+    partial class AddModpacks
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
+
+            modelBuilder.Entity("FactorioLibrary.Models.Modpack", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModListJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<byte[]>("ModSettingsDat")
+                        .HasColumnType("BLOB");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetFactorioVersion")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Modpacks");
+                });
 
             modelBuilder.Entity("FactorioLibrary.Models.ServerInstance", b =>
                 {
@@ -92,6 +118,9 @@ namespace FactorioLibrary.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AccessLevel")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("ServerInstanceId")

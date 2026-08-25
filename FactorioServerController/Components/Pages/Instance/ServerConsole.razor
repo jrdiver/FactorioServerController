@@ -1,13 +1,12 @@
 @page "/instance/{Id:int}/console"
+@using System.Text
+@using Docker.DotNet
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
-@using FactorioLibrary
-@using Microsoft.EntityFrameworkCore
-@using System.Text
-@using Docker.DotNet
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
 @implements IAsyncDisposable
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
@@ -119,7 +118,7 @@ else
                                placeholder="Enter RCON command (e.g. time, players, save)..." 
                                disabled="@(!InstanceManager.IsRunning(Instance!.Id))" />
                                
-                        <button type="submit" class="btn btn-accent" disabled="@(!InstanceManager.IsRunning(Instance!.Id) || string.IsNullOrWhiteSpace(RconInput))">
+                        <button type="submit" class="btn btn-glass" disabled="@(!InstanceManager.IsRunning(Instance!.Id) || string.IsNullOrWhiteSpace(RconInput))">
                             <span><i class="bi bi-send-fill me-2"></i>Send</span>
                         </button>
                     </form>
@@ -141,6 +140,7 @@ else
     
     private MultiplexedStream? _logStream;
     private CancellationTokenSource _cts = new();
+    private bool _isConnecting = false;
     private List<string> _pendingLogs = new();
     private readonly object _logLock = new();
 
@@ -178,35 +178,6 @@ else
         {
             await StartLogStreamAsync();
         }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            try 
-            {
-                await JSRuntime.InvokeVoidAsync("setupConsoleAutoScroll");
-            }
-            catch { }
-        }
-    }
-
-    private async Task StartLogStreamAsync()
-    {
-        _logStream = await InstanceManager.GetLogStreamAsync(Instance!.Id, _cts.Token);
-        
-        if (_logStream != null)
-        {
-            // Start reading logs in the background without awaiting
-            _ = ReadLogsLoopAsync();
-        }
-    }
-
-    private async Task ReadLogsLoopAsync()
-    {
-        byte[] buffer = new byte[81920];
-        StringBuilder lineBuffer = new StringBuilder();
         
         // Background task to flush pending logs to the UI exactly 10 times a second
         _ = Task.Run(async () => {
@@ -233,9 +204,46 @@ else
                         
                         // Autoscroll is now handled natively by JS MutationObserver in the browser
                     }
+                    else if (_logStream == null && InstanceManager.IsRunning(Instance!.Id) && !_isConnecting)
+                    {
+                        _isConnecting = true;
+                        // Reconnect to log stream if the server started in the background
+                        _ = StartLogStreamAsync();
+                        await InvokeAsync(StateHasChanged);
+                    }
                 }
             } catch { }
         });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try 
+            {
+                await JSRuntime.InvokeVoidAsync("setupConsoleAutoScroll");
+            }
+            catch { }
+        }
+    }
+
+    private async Task StartLogStreamAsync()
+    {
+        _logStream = await InstanceManager.GetLogStreamAsync(Instance!.Id, _cts.Token);
+        _isConnecting = false;
+        
+        if (_logStream != null)
+        {
+            // Start reading logs in the background without awaiting
+            _ = ReadLogsLoopAsync();
+        }
+    }
+
+    private async Task ReadLogsLoopAsync()
+    {
+        byte[] buffer = new byte[81920];
+        StringBuilder lineBuffer = new StringBuilder();
         
         try
         {
@@ -258,7 +266,21 @@ else
                     {
                         while ((newlineIndex = currentBuffer.IndexOf('\n')) >= 0)
                         {
-                            _pendingLogs.Add(currentBuffer.Substring(0, newlineIndex).TrimEnd('\r'));
+                            string logLine = currentBuffer.Substring(0, newlineIndex).TrimEnd('\r');
+                            
+                            if (Instance != null)
+                            {
+                                if (!string.IsNullOrEmpty(Instance.RconPassword))
+                                {
+                                    logLine = logLine.Replace(Instance.RconPassword, "<private>");
+                                }
+                                if (Instance.RconPort > 0)
+                                {
+                                    logLine = logLine.Replace(Instance.RconPort.ToString(), "<private>");
+                                }
+                            }
+                            
+                            _pendingLogs.Add(logLine);
                             currentBuffer = currentBuffer.Substring(newlineIndex + 1);
                         }
                     }
@@ -278,6 +300,14 @@ else
                 Logs.Add($"[Error reading logs: {ex.Message}]");
                 StateHasChanged();
             });
+        }
+        finally
+        {
+            if (_logStream != null)
+            {
+                _logStream.Dispose();
+                _logStream = null;
+            }
         }
     }
 

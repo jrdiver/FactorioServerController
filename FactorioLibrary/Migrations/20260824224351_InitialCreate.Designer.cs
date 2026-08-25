@@ -11,14 +11,14 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FactorioLibrary.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260628065229_AddUserServerAccess")]
-    partial class AddUserServerAccess
+    [Migration("20260824224351_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
 
             modelBuilder.Entity("FactorioLibrary.Models.ServerInstance", b =>
                 {
@@ -34,6 +34,10 @@ namespace FactorioLibrary.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Description")
+                        .HasColumnType("TEXT");
+
+                    b.PrimitiveCollection<string>("IgnoredMods")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int>("MaxPlayers")
@@ -88,6 +92,9 @@ namespace FactorioLibrary.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AccessLevel")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("ServerInstanceId")

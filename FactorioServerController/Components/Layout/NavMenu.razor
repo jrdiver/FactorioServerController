@@ -31,18 +31,6 @@
             </NavLink>
         </div>
 
-        <div class="nav-item px-3 mb-1">
-            <NavLink class="nav-link" href="help">
-                <i class="bi bi-book-half me-2" aria-hidden="true"></i> Help & API
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3 mb-1">
-            <a class="nav-link" href="https://wiki.factorio.com/" target="_blank">
-                <i class="bi bi-question-circle me-2" aria-hidden="true"></i> Factorio Wiki
-            </a>
-        </div>
-
         <AuthorizeView Roles="Administrator">
             <Authorized>
                 <div class="nav-item px-3 mb-1">
@@ -55,13 +43,25 @@
                         <i class="bi bi-box-seam me-2" aria-hidden="true"></i> Global Mods
                     </NavLink>
                 </div>
+                <div class="nav-item px-3 mb-1">
+                    <NavLink class="nav-link" href="admin/modpacks">
+                        <i class="bi bi-box2-fill me-2" aria-hidden="true"></i> Modpacks
+                    </NavLink>
+                </div>
             </Authorized>
         </AuthorizeView>
+
+        <div class="nav-item px-3 mb-1">
+            <NavLink class="nav-link" href="help">
+                <i class="bi bi-book-half me-2" aria-hidden="true"></i> Help & API
+            </NavLink>
+        </div>
 
         <AuthorizeView>
             <Authorized>
                 <div class="nav-item px-3 mt-4">
                     <form method="post" action="/api/auth/logout">
+                        <AntiforgeryToken />
                         <button type="submit" class="nav-link btn btn-link text-danger text-start w-100" style="border: none;">
                             <i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i> Logout
                         </button>

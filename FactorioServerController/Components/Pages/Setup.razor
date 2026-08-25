@@ -32,6 +32,7 @@
         else
         {
             <form method="post" action="/api/auth/setup">
+                <AntiforgeryToken />
                 <div class="mb-3">
                     <label class="form-label text-muted">Admin Username</label>
                     <input type="text" name="username" class="form-control bg-dark text-white border-secondary" required placeholder="admin" autofocus />

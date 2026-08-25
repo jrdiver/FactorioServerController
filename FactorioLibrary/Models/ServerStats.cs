@@ -7,5 +7,6 @@ namespace FactorioLibrary.Models
         public double RamLimitMb { get; set; }
         public List<string> OnlinePlayers { get; set; } = [];
         public bool IsOnline { get; set; }
+        public int OnlineCpus { get; set; }
     }
 }

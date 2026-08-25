@@ -95,7 +95,7 @@
                                     <button class="btn btn-sm btn-glass-secondary text-primary me-2" @onclick="() => ToggleAdminRole(user.User, true)">
                                         <i class="bi bi-star-fill me-1"></i> Promote
                                     </button>
-                                    
+
                                     if (user.User.Id != CurrentUserId)
                                     {
                                         <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteUser(user.User)" title="Delete User">
@@ -176,7 +176,7 @@
                 </div>
                 <div class="modal-body">
                     <p class="text-muted mb-3">Select the servers this user is allowed to view and manage.</p>
-                    
+
                     <div class="list-group">
                         @foreach (ServerInstance server in Servers)
                         {
@@ -189,8 +189,8 @@
                                     <h6 class="mb-0">@server.Name</h6>
                                     <small class="text-muted">Port: @server.Port</small>
                                 </div>
-                                <select class="form-select form-select-sm bg-dark text-white border-secondary w-auto" 
-                                        value="@accessStr" 
+                                <select class="form-select form-select-sm bg-dark text-white border-secondary w-auto"
+                                        value="@accessStr"
                                         @onchange="(e) => SetAccessLevel(server.Id, e.Value?.ToString())">
                                     <option value="None">No Access</option>
                                     <option value="Viewer">Viewer</option>
@@ -230,7 +230,7 @@
         AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
         IdentityUser? user = await UserManager.GetUserAsync(authState.User);
         CurrentUserId = user?.Id;
-        
+
         await LoadData();
     }
 
@@ -238,13 +238,13 @@
     {
         Servers = await DbContext.ServerInstances.ToListAsync();
         List<IdentityUser> allUsers = await UserManager.Users.ToListAsync();
-        
+
         Users.Clear();
         foreach (IdentityUser u in allUsers)
         {
             bool isAdmin = await UserManager.IsInRoleAsync(u, "Administrator");
             List<UserServerAccess> accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == u.Id).ToListAsync();
-            
+
             Users.Add(new UserInfo
             {
                 User = u,
@@ -279,20 +279,16 @@
 
         IdentityUser? user = new IdentityUser { UserName = NewUsername };
         IdentityResult result = await UserManager.CreateAsync(user, NewPassword);
-        
+
         if (result.Succeeded)
         {
             if (NewUserIsAdmin)
-            {
                 await UserManager.AddToRoleAsync(user, "Administrator");
-            }
             await LoadData();
         }
         else
-        {
             ErrorMessage = result.Errors.FirstOrDefault()?.Description ?? "Failed to create user.";
-        }
-        
+
         IsCreateUserModalOpen = false;
     }
 
@@ -364,7 +360,7 @@
             DbContext.UserServerAccesses.RemoveRange(accesses);
             await DbContext.SaveChangesAsync();
         }
-        
+
         await UserManager.DeleteAsync(user);
         await LoadData();
     }

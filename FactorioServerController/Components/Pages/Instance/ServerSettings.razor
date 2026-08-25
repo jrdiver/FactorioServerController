@@ -1,12 +1,12 @@
 @page "/instance/{Id:int}/settings"
-@using FactorioLibrary.Models
-@using FactorioLibrary.Services
-@using FactorioLibrary.Data
-@using Microsoft.EntityFrameworkCore
 @using System.IO
 @using System.Text.Json
+@using FactorioLibrary.Data
+@using FactorioLibrary.Models
+@using FactorioLibrary.Services
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
 @inject NavigationManager Navigation

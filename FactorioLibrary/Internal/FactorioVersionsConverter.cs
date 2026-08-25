@@ -8,8 +8,7 @@ internal class FactorioVersionsConverter : JsonConverter<FactorioVersions>
 {
     public override FactorioVersions Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        Dictionary<string, List<FactorioVersion>> platforms = JsonSerializer.Deserialize<Dictionary<string, List<FactorioVersion>>>(ref reader, options)
-                                                              ?? [];
+        Dictionary<string, List<FactorioVersion>> platforms = JsonSerializer.Deserialize<Dictionary<string, List<FactorioVersion>>>(ref reader, options) ?? [];
 
         return new() { Platforms = platforms };
     }

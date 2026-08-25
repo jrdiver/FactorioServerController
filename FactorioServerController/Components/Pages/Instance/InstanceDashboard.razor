@@ -44,7 +44,7 @@
                     <div class="progress bg-secondary" style="height: 10px;">
                         <div class="progress-bar @(Stats.CpuPercentage > 80 ? "bg-danger" : "bg-primary")" role="progressbar" style="width: @(Math.Min(100, Stats.CpuPercentage))%"></div>
                     </div>
-                    <small class="text-muted mt-2 d-block">(100% = 1 CPU Core)</small>
+                    <small class="text-muted mt-2 d-block">(Average across @Stats.OnlineCpus cores)</small>
                 </div>
             </div>
 

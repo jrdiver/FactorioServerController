@@ -1,12 +1,12 @@
 @page "/instance/{Id:int}"
+@using FactorioLibrary
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
-@using FactorioLibrary.Services
-@using FactorioLibrary
 @using FactorioLibrary.Objects
-@using Microsoft.EntityFrameworkCore
+@using FactorioLibrary.Services
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
 @inject NavigationManager Navigation
@@ -22,9 +22,9 @@
             const utc = el.getAttribute('data-utc');
             if (utc) {
                 const date = new Date(utc);
-                el.title = date.toLocaleString(undefined, { 
-                    month: 'short', day: 'numeric', year: 'numeric', 
-                    hour: 'numeric', minute: '2-digit', hour12: true 
+                el.title = date.toLocaleString(undefined, {
+                    month: 'short', day: 'numeric', year: 'numeric',
+                    hour: 'numeric', minute: '2-digit', hour12: true
                 }) + ' (Local)';
             }
         });
@@ -56,7 +56,7 @@ else
                     @Instance.Name
                 </h1>
             </div>
-            
+
             <div class="d-flex gap-2">
                 @if (!IsViewer)
                 {
@@ -92,66 +92,69 @@ else
 
                 <div class="glass-card mb-4">
                     <h4 class="mb-4"><i class="bi bi-sliders me-2"></i>General Settings</h4>
-                    
+
                     <EditForm Model="@Instance" OnValidSubmit="SaveChanges">
                         <DataAnnotationsValidator />
                         <fieldset disabled="@IsViewer">
-                        
-                        <div class="mb-3">
-                            <label class="form-label text-muted">Server Name</label>
-                            <InputText @bind-Value="Instance.Name" class="form-control bg-transparent text-white border-secondary" />
-                            <ValidationMessage For="@(() => Instance.Name)" />
-                        </div>
-                        
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label text-muted">Game Port</label>
-                                <InputNumber @bind-Value="Instance.Port" class="form-control bg-transparent text-white border-secondary" />
-                                <ValidationMessage For="@(() => Instance.Port)" />
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label text-muted">Factorio Version</label>
-                                <InputSelect @bind-Value="Instance.AssignedVersion" class="form-select bg-transparent text-white border-secondary">
-                                    @foreach (var v in AvailableVersions)
-                                    {
-                                        <option value="@v.Tag" class="text-dark">@v.DisplayName</option>
-                                    }
-                                </InputSelect>
-                                <ValidationMessage For="@(() => Instance.AssignedVersion)" />
-                            </div>
-                        </div>
 
-                        <h5 class="mt-4 mb-3 text-muted border-bottom border-secondary pb-2"><i class="bi bi-terminal me-2"></i>RCON Configuration</h5>
-                        <div class="row mb-4">
-                            <div class="col-md-6">
-                                <label class="form-label text-muted">RCON Port</label>
-                                <InputNumber @bind-Value="Instance.RconPort" autocomplete="new-password" class="form-control bg-transparent text-white border-secondary" />
+                            <div class="mb-3">
+                                <label class="form-label text-muted">Server Name</label>
+                                <InputText @bind-Value="Instance.Name" class="form-control bg-transparent text-white border-secondary" />
+                                <ValidationMessage For="@(() => Instance.Name)" />
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label text-muted">RCON Password</label>
-                                <div class="input-group">
-                                    <InputText @bind-Value="Instance.RconPassword" type="@(ShowRconPassword ? "text" : "password")" autocomplete="new-password" class="form-control bg-transparent text-white border-secondary" />
-                                    <button type="button" class="btn btn-outline-secondary border-secondary text-muted" @onclick="() => ShowRconPassword = !ShowRconPassword">
-                                        <i class="bi @(ShowRconPassword ? "bi-eye-slash" : "bi-eye")"></i>
-                                    </button>
+
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label text-muted">Game Port</label>
+                                    <InputNumber @bind-Value="Instance.Port" class="form-control bg-transparent text-white border-secondary" />
+                                    <ValidationMessage For="@(() => Instance.Port)" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-muted">Factorio Version</label>
+                                    <InputSelect @bind-Value="Instance.AssignedVersion" class="form-select bg-transparent text-white border-secondary">
+                                        @foreach (var v in AvailableVersions)
+                                        {
+                                            <option value="@v.Tag" class="text-dark">@v.DisplayName</option>
+                                        }
+                                    </InputSelect>
+                                    <ValidationMessage For="@(() => Instance.AssignedVersion)" />
                                 </div>
                             </div>
-                        </div>
 
-                        <div class="d-flex justify-content-between align-items-center">
-                            @if (ShowSaveSuccess)
-                            {
-                                <span class="text-success"><i class="bi bi-check-circle-fill me-2"></i>Settings saved successfully!</span>
-                            }
-                            else
-                            {
-                                <span></span>
-                            }
                             @if (!IsViewer)
                             {
-                                <button type="submit" class="btn btn-glass"><i class="bi bi-save-fill me-2"></i>Save Changes</button>
+                                <h5 class="mt-4 mb-3 text-muted border-bottom border-secondary pb-2"><i class="bi bi-terminal me-2"></i>RCON Configuration</h5>
+                                <div class="row mb-4">
+                                    <div class="col-md-6">
+                                        <label class="form-label text-muted">RCON Port</label>
+                                        <InputNumber @bind-Value="Instance.RconPort" autocomplete="new-password" class="form-control bg-transparent text-white border-secondary" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label text-muted">RCON Password</label>
+                                        <div class="input-group">
+                                            <InputText @bind-Value="Instance.RconPassword" type="@(ShowRconPassword ? "text" : "password")" autocomplete="new-password" class="form-control bg-transparent text-white border-secondary" />
+                                            <button type="button" class="btn btn-outline-secondary border-secondary text-muted" @onclick="() => ShowRconPassword = !ShowRconPassword">
+                                                <i class="bi @(ShowRconPassword ? "bi-eye-slash" : "bi-eye")"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             }
-                        </div>
+
+                            <div class="d-flex justify-content-between align-items-center">
+                                @if (ShowSaveSuccess)
+                                {
+                                    <span class="text-success"><i class="bi bi-check-circle-fill me-2"></i>Settings saved successfully!</span>
+                                }
+                                else
+                                {
+                                    <span></span>
+                                }
+                                @if (!IsViewer)
+                                {
+                                    <button type="submit" class="btn btn-glass"><i class="bi bi-save-fill me-2"></i>Save Changes</button>
+                                }
+                            </div>
                         </fieldset>
                     </EditForm>
                 </div>
@@ -177,7 +180,7 @@ else
                             }
                         </div>
                     </div>
-                    
+
                     @if (IsUploading)
                     {
                         <div class="progress mb-4" style="height: 10px; background-color: rgba(255,255,255,0.1);">
@@ -280,7 +283,7 @@ else
                             </table>
                         </div>
                         <div class="text-muted small mt-3">
-                            <i class="bi bi-info-circle me-1"></i> 
+                            <i class="bi bi-info-circle me-1"></i>
                             @if (string.IsNullOrEmpty(Instance?.ActiveSaveName))
                             {
                                 <span>The Factorio server automatically loads the most recently modified save file when it starts.</span>
@@ -293,7 +296,7 @@ else
                     }
                 </div>
             </div>
-            
+
             <div class="col-lg-4">
                 <div class="glass-card mb-4">
                     <h4 class="mb-4"><i class="bi bi-info-circle me-2"></i>Quick Actions</h4>
@@ -332,7 +335,7 @@ else
                     <div class="alert alert-warning mb-0">
                         <i class="bi bi-exclamation-circle me-2"></i>
                         <strong>Warning:</strong> This will completely wipe the <code>config/</code> directory and <code>player-data.json</code>.
-                        <br/><br/>
+                        <br /><br />
                         Use this if the server fails to start after downgrading Factorio versions or if you want to restore default settings.
                     </div>
                 </div>
@@ -361,7 +364,7 @@ else
                     <div class="alert alert-warning mb-0">
                         <i class="bi bi-exclamation-circle me-2"></i>
                         <strong>Warning:</strong> This will completely remove the server, delete its Docker container, and permanently erase all save files, configs, and mods from the disk!
-                        <br/><br/>
+                        <br /><br />
                         Please ensure you have downloaded any save files or mods you want to keep before proceeding.
                     </div>
                 </div>
@@ -420,7 +423,7 @@ else
     {
         AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
         IdentityUser? user = await UserManager.GetUserAsync(authState.User);
-        
+
         if (user == null)
         {
             Navigation.NavigateTo("/login");
@@ -455,11 +458,11 @@ else
         catch
         {
             // Fallback if API fails
-            AvailableVersions = new List<DockerTagInfo> { 
-                new("latest", "latest"), 
-                new("stable", "stable"), 
-                new("2.1", "2.1"), 
-                new("2.0", "2.0") 
+            AvailableVersions = new List<DockerTagInfo> {
+                new("latest", "latest"),
+                new("stable", "stable"),
+                new("2.1", "2.1"),
+                new("2.0", "2.0")
             };
         }
 
@@ -491,7 +494,7 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        try 
+        try
         {
             await JSRuntime.InvokeVoidAsync("formatLocalTimes");
         }
@@ -504,10 +507,10 @@ else
         {
             DbContext.ServerInstances.Update(Instance);
             await DbContext.SaveChangesAsync();
-            
+
             ShowSaveSuccess = true;
             StateHasChanged();
-            
+
             // Hide success message after 3 seconds
             await Task.Delay(3000);
             ShowSaveSuccess = false;
@@ -530,8 +533,6 @@ else
         ShowResetConfirmation = false;
         InstanceManager.FactoryResetConfigs(Id);
         StateHasChanged();
-        
-        // Let the user know via a small UI update if we want, or just rely on them seeing the modal close
     }
 
     private async Task StartServer()
@@ -540,17 +541,16 @@ else
         {
             IsStarting = true;
             StateHasChanged();
-            
+
             var result = await InstanceManager.StartInstanceAsync(Instance);
-            
+
             IsStarting = false;
-            
+
             if (result.CleanedCorruptSave)
             {
-                // We'll let the user know, but they already see the warning banner on this page
-                HasCorruptedTempSave = false; // It's deleted now!
+                HasCorruptedTempSave = false;
             }
-            
+
             StateHasChanged();
         }
     }
@@ -559,9 +559,9 @@ else
     {
         IsStopping = true;
         StateHasChanged();
-        
+
         await InstanceManager.StopInstanceAsync(Id);
-        
+
         IsStopping = false;
         StateHasChanged();
     }
@@ -582,10 +582,10 @@ else
         {
             IsDeleting = true;
             StateHasChanged();
-            
+
             // Delete docker container and all host files
             await InstanceManager.DeleteInstanceDataAsync(Id);
-            
+
             // Remove from DB
             DbContext.ServerInstances.Remove(Instance);
             await DbContext.SaveChangesAsync();
@@ -616,20 +616,20 @@ else
             }
 
             DirectoryInfo dirInfo = new DirectoryInfo(savesDir);
-            
+
             HasCorruptedTempSave = dirInfo.GetFiles("*.tmp.zip").Any();
-            
+
             SaveFiles = dirInfo.GetFiles("*.zip")
-                .Where(f => !f.Name.EndsWith(".tmp.zip", StringComparison.OrdinalIgnoreCase))
-                .Select(f => new SaveFileInfo
-                {
-                    Name = f.Name,
-                    LastModified = f.LastWriteTimeUtc,
-                    SizeBytes = f.Length,
-                    SaveVersion = ExtractSaveVersion(f.FullName)
-                })
-                .OrderByDescending(s => s.LastModified)
-                .ToList();
+                            .Where(f => !f.Name.EndsWith(".tmp.zip", StringComparison.OrdinalIgnoreCase))
+                            .Select(f => new SaveFileInfo
+                            {
+                                Name = f.Name,
+                                LastModified = f.LastWriteTimeUtc,
+                                SizeBytes = f.Length,
+                                SaveVersion = ExtractSaveVersion(f.FullName)
+                            })
+                            .OrderByDescending(s => s.LastModified)
+                            .ToList();
         }
         catch (Exception)
         {
@@ -664,7 +664,7 @@ else
             // Allow up to 2GB max file size
             await using Stream stream = file.OpenReadStream(2147483648);
             await using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
-            
+
             byte[] buffer = new byte[81920];
             int read;
             while ((read = await stream.ReadAsync(buffer)) > 0)
@@ -759,12 +759,12 @@ else
         try
         {
             using System.IO.Compression.ZipArchive archive = System.IO.Compression.ZipFile.OpenRead(zipPath);
-            // script.dat and level.dat contain the last saved version. 
+            // script.dat and level.dat contain the last saved version.
             // For massive multi-part Space Age saves, level.dat is split, so we must check script.dat first.
             System.IO.Compression.ZipArchiveEntry? entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("script.dat", StringComparison.OrdinalIgnoreCase))
-                        ?? archive.Entries.FirstOrDefault(e => e.Name.Equals("level.dat", StringComparison.OrdinalIgnoreCase)) 
+                        ?? archive.Entries.FirstOrDefault(e => e.Name.Equals("level.dat", StringComparison.OrdinalIgnoreCase))
                         ?? archive.Entries.FirstOrDefault(e => e.Name.Equals("level-init.dat", StringComparison.OrdinalIgnoreCase));
-            
+
             if (entry != null)
             {
                 using Stream stream = entry.Open();

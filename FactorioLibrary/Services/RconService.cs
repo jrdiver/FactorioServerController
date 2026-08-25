@@ -25,8 +25,7 @@ namespace FactorioLibrary.Services
                 var gateway = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
                     .SelectMany(n => n.GetIPProperties().GatewayAddresses)
                     .Select(g => g.Address)
-                    .Where(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                    .FirstOrDefault();
+                    .FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
 
                 if (gateway != null)
                     return gateway.ToString();
@@ -55,7 +54,7 @@ namespace FactorioLibrary.Services
                 string response = await rcon.SendCommandAsync(command);
                 if (response.StartsWith("Error"))
                     throw new Exception(response);
-                    
+
                 return response;
             }
             catch
@@ -86,7 +85,7 @@ namespace FactorioLibrary.Services
         {
             List<string> players = [];
             string response = await SendCommandAsync(instanceId, port, password, "/players online");
-            
+
             // Factorio response format: "Online players (1): \n username"
             // Or "Online players (0):"
             if (response.Contains("Error:"))

@@ -17,11 +17,12 @@ string dataDir = Path.Combine(Directory.GetCurrentDirectory(), "data");
 if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
 
 // Add services to the container.
-string defaultDb = $"Data Source={Path.Combine(dataDir, "factorio_manager.db")}";
-builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? defaultDb));
+string connStr = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connStr)) connStr = $"Data Source={Path.Combine(dataDir, "factorio_manager.db")}";
+builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connStr));
 
-string defaultKeyPath = Path.Combine(dataDir, "keys");
-string dataProtectionPath = builder.Configuration["DataProtection:KeyPath"] ?? defaultKeyPath;
+string dataProtectionPath = builder.Configuration["DataProtection:KeyPath"];
+if (string.IsNullOrWhiteSpace(dataProtectionPath)) dataProtectionPath = Path.Combine(dataDir, "keys");
 
 builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath)).SetApplicationName("FactorioServerController");
 
@@ -43,7 +44,7 @@ builder.Services.ConfigureApplicationCookie(options =>
 
 builder.Services.AddAuthorization();
 
-builder.Services.AddIdentityCore<IdentityUser>(options => 
+builder.Services.AddIdentityCore<IdentityUser>(options =>
     {
         options.SignIn.RequireConfirmedAccount = false;
         options.Password.RequireNonAlphanumeric = false;
@@ -54,7 +55,8 @@ builder.Services.AddIdentityCore<IdentityUser>(options =>
     }).AddRoles<IdentityRole>().AddEntityFrameworkStores<AppDbContext>().AddSignInManager().AddDefaultTokenProviders();
 
 // Register Factorio Core Services
-string settingsPath = builder.Configuration["GlobalSettings:Path"] ?? Path.Combine(dataDir, "settings.json");
+string settingsPath = builder.Configuration["GlobalSettings:Path"];
+if (string.IsNullOrWhiteSpace(settingsPath)) settingsPath = Path.Combine(dataDir, "settings.json");
 builder.Services.AddSingleton<GlobalSettingsService>(sp => new GlobalSettingsService(settingsPath));
 builder.Services.AddSingleton<FactorioWebApi>(sp => new FactorioWebApi(new FactorioLibrary.Objects.FactorioCredentials(), sp.GetRequiredService<GlobalSettingsService>()));
 builder.Services.AddSingleton<VersionManager>();
@@ -75,7 +77,7 @@ using (IServiceScope scope = app.Services.CreateScope())
     // Seed the first user as Administrator if no administrators exist
     RoleManager<IdentityRole> roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     UserManager<IdentityUser> userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
-    
+
     if (!roleManager.RoleExistsAsync("Administrator").GetAwaiter().GetResult())
         roleManager.CreateAsync(new IdentityRole("Administrator")).GetAwaiter().GetResult();
 
@@ -113,7 +115,7 @@ app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 app.MapAuthEndpoints();
 
 // Minimal API endpoint for downloading save files directly
-app.MapGet("/api/instances/{id:int}/saves/{filename}", async (int id, string filename, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
+app.MapGet("/api/instances/{id:int}/saves/{filename}", async (int id, string filename, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
     if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
 
@@ -121,30 +123,30 @@ app.MapGet("/api/instances/{id:int}/saves/{filename}", async (int id, string fil
     string safeFilename = Path.GetFileName(filename);
     string savesDir = manager.GetSavesDirectory(id);
     string filePath = Path.Combine(savesDir, safeFilename);
-    
-    if (!System.IO.File.Exists(filePath)) 
+
+    if (!System.IO.File.Exists(filePath))
         return Results.NotFound();
-        
+
     return Results.File(filePath, "application/zip", safeFilename);
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for downloading individual mod files
-app.MapGet("/api/instances/{id:int}/mods/{filename}", async (int id, string filename, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
+app.MapGet("/api/instances/{id:int}/mods/{filename}", async (int id, string filename, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
     if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
 
     string safeFilename = Path.GetFileName(filename);
     string modsDir = manager.GetModsDirectory(id);
     string filePath = Path.Combine(modsDir, safeFilename);
-    
-    if (!System.IO.File.Exists(filePath)) 
+
+    if (!System.IO.File.Exists(filePath))
         return Results.NotFound();
-        
+
     return Results.File(filePath, "application/zip", safeFilename);
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for downloading all mods as a zip
-app.MapGet("/api/instances/{id:int}/mods/downloadAll", async (int id, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
+app.MapGet("/api/instances/{id:int}/mods/downloadAll", async (int id, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
     if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
 
@@ -153,17 +155,17 @@ app.MapGet("/api/instances/{id:int}/mods/downloadAll", async (int id, InstanceMa
         return Results.NotFound();
 
     string tempZipPath = Path.Combine(manager.GetConfigDirectory(id), "modpack_temp.zip");
-    
+
     if (System.IO.File.Exists(tempZipPath))
         System.IO.File.Delete(tempZipPath);
 
     System.IO.Compression.ZipFile.CreateFromDirectory(modsDir, tempZipPath, System.IO.Compression.CompressionLevel.Fastest, false);
-    
+
     return Results.File(tempZipPath, "application/zip", $"instance_{id}_mods.zip");
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for listing all instances
-app.MapGet("/api/instances", async (AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
+app.MapGet("/api/instances", async (AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
     var identityUser = await userManager.GetUserAsync(user);
     if (identityUser == null) return Results.Unauthorized();
@@ -171,20 +173,20 @@ app.MapGet("/api/instances", async (AppDbContext db, InstanceManager manager, Us
 
     var query = db.ServerInstances.AsQueryable();
     List<FactorioLibrary.Models.UserServerAccess>? accessList = null;
-    
+
     if (!isGlobalAdmin)
     {
         accessList = await db.UserServerAccesses
             .Where(usa => usa.UserId == identityUser.Id)
             .ToListAsync();
-            
+
         var accessibleIds = accessList.Select(usa => usa.ServerInstanceId).ToList();
         query = query.Where(si => accessibleIds.Contains(si.Id));
     }
-    
+
     var instancesList = await query.ToListAsync();
 
-    var instances = instancesList.Select(x => new 
+    var instances = instancesList.Select(x => new
     {
         x.Id,
         x.Name,
@@ -198,18 +200,18 @@ app.MapGet("/api/instances", async (AppDbContext db, InstanceManager manager, Us
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for listing saves for an instance
-app.MapGet("/api/instances/{id:int}/saves", async (int id, AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
+app.MapGet("/api/instances/{id:int}/saves", async (int id, AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
     if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
 
     var instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
-    
+
     string savesDir = manager.GetSavesDirectory(id);
     if (!Directory.Exists(savesDir)) Directory.CreateDirectory(savesDir);
     var saves = Directory.GetFiles(savesDir, "*.zip").Select(Path.GetFileName);
 
-    var result = saves.Select(s => new 
+    var result = saves.Select(s => new
     {
         Name = s,
         IsActive = (s == instance.ActiveSaveName)
@@ -218,37 +220,37 @@ app.MapGet("/api/instances/{id:int}/saves", async (int id, AppDbContext db, Inst
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for starting an instance
-app.MapPost("/api/instances/{id:int}/start", async (int id, AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
+app.MapPost("/api/instances/{id:int}/start", async (int id, AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
     if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, true)) return Results.Forbid();
 
     var instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
-    
+
     var result = await manager.StartInstanceAsync(instance);
     return result.Success ? Results.Ok("Started") : Results.BadRequest("Failed to start instance or already running.");
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for stopping an instance
-app.MapPost("/api/instances/{id:int}/stop", async (int id, AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
+app.MapPost("/api/instances/{id:int}/stop", async (int id, AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
     if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, true)) return Results.Forbid();
 
     var instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
-    
+
     await manager.StopInstanceAsync(id);
     return Results.Ok("Stop command sent.");
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for setting the active save
-app.MapPut("/api/instances/{id:int}/saves/active", async (int id, string saveName, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) => 
+app.MapPut("/api/instances/{id:int}/saves/active", async (int id, string saveName, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
     if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, true)) return Results.Forbid();
 
     var instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
-    
+
     instance.ActiveSaveName = saveName;
     await db.SaveChangesAsync();
     return Results.Ok(new { Message = $"Active save set to {saveName}" });
@@ -268,7 +270,7 @@ public static class ApiAuthHelper
 
         var access = await db.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == identityUser.Id && usa.ServerInstanceId == instanceId);
         if (access == null) return false;
-        
+
         if (requireAdmin && access.AccessLevel != FactorioLibrary.Models.ServerAccessLevel.Admin)
             return false;
 

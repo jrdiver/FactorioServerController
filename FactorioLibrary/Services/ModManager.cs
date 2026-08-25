@@ -1,10 +1,10 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.IO.Compression;
-using System.Runtime.InteropServices;
 using FactorioLibrary.Internal;
 using FactorioLibrary.Models;
 using Microsoft.Extensions.Configuration;
+using System.IO.Compression;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace FactorioLibrary.Services;
 
@@ -13,8 +13,7 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
     private const string ModPortalApiBase = "https://mods.factorio.com/api/mods";
     private readonly HttpClient _httpClient = httpClient ?? Shared.HttpClient;
     private readonly GlobalSettingsService _settingsService = settingsService;
-    private readonly string _hostBaseMountPath = config.GetValue<string>("HOST_BASE_MOUNT_PATH") 
-        ?? (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "C:\\FactorioServers" : "/mnt/user/appdata/factorio_manager/servers");
+    private readonly string _hostBaseMountPath = string.IsNullOrEmpty(config.GetValue<string>("HOST_BASE_MOUNT_PATH")) ? (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "C:\\FactorioServers" : "/mnt/user/appdata/factorio_manager/servers") : config.GetValue<string>("HOST_BASE_MOUNT_PATH")!;
 
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
     private Dictionary<string, ModCacheEntry>? _modCache;
@@ -22,7 +21,7 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
     private async Task LoadCacheAsync()
     {
         if (_modCache != null) return;
-        
+
         string cachePath = Path.Combine(GetGlobalModsPath(), "mod-cache.json");
         if (File.Exists(cachePath))
         {
@@ -58,7 +57,7 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
         try
         {
             await LoadCacheAsync();
-            
+
             if (!forceRefresh && _modCache!.TryGetValue(modName, out var entry))
             {
                 if (DateTime.UtcNow - entry.LastChecked < TimeSpan.FromHours(24))
@@ -76,12 +75,12 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
                 info = JsonSerializer.Deserialize<ModInfo>(json, options);
             }
 
-            _modCache![modName] = new ModCacheEntry 
-            { 
-                LastChecked = DateTime.UtcNow, 
-                Info = info 
+            _modCache![modName] = new ModCacheEntry
+            {
+                LastChecked = DateTime.UtcNow,
+                Info = info
             };
-            
+
             await SaveCacheAsync();
             return info;
         }
@@ -93,18 +92,25 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
 
     private string GetInstanceModsPath(int instanceId)
     {
-        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
-            ? $"/factorio/{instanceId}" 
+        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true"
+            ? $"/factorio/{instanceId}"
             : $"{_hostBaseMountPath.TrimEnd('/', '\\')}/{instanceId}";
         return Path.Combine(localDataPath, "mods");
     }
 
     public string GetGlobalModsPath()
     {
-        string basePath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
-            ? "/factorio" 
-            : _hostBaseMountPath.TrimEnd('/', '\\');
-        string globalPath = Path.Combine(basePath, "global_mods");
+        bool inContainer = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
+        string globalPath;
+        if (inContainer)
+        {
+            globalPath = "/data/global_mods";
+        }
+        else
+        {
+            var parent = Directory.GetParent(_hostBaseMountPath.TrimEnd('/', '\\'))?.FullName ?? _hostBaseMountPath;
+            globalPath = Path.Combine(parent, "app-data", "global_mods");
+        }
         if (!Directory.Exists(globalPath)) Directory.CreateDirectory(globalPath);
         return globalPath;
     }
@@ -176,10 +182,6 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
 
     public async Task<(bool success, string error)> UpdateModAsync(int instanceId, string modName, string downloadUrl, string newFileName, string oldFileName)
     {
-        GlobalSettings settings = _settingsService.GetSettings();
-        if (string.IsNullOrEmpty(settings.FactorioUsername) || string.IsNullOrEmpty(settings.FactorioToken))
-            return (false, "Factorio Mod Portal credentials are not configured in Settings.");
-
         string modsDir = GetInstanceModsPath(instanceId);
         if (!Directory.Exists(modsDir)) Directory.CreateDirectory(modsDir);
 
@@ -204,23 +206,51 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
 
             if (!copiedLocally)
             {
-                string finalUrl = $"https://mods.factorio.com{downloadUrl}?username={Uri.EscapeDataString(settings.FactorioUsername.Trim())}&token={Uri.EscapeDataString(settings.FactorioToken.Trim())}";
-                using HttpResponseMessage response = await _httpClient.GetAsync(finalUrl, HttpCompletionOption.ResponseHeadersRead);
-                if (!response.IsSuccessStatusCode)
-                    return (false, $"Mod Portal returned {response.StatusCode} when attempting to download.");
-
-                using FileStream fs = new(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None);
-                await response.Content.CopyToAsync(fs);
-                fs.Close();
-
-                // Cache in global pool
-                try
+                GlobalSettings settings = _settingsService.GetSettings();
+                
+                // Fallback: If we don't have the EXACT latest version in the cache, but we DO have an older version
+                // of this mod in the cache, and we CANNOT download from the portal because of missing credentials,
+                // we should fallback to the best available version in the cache.
+                if (string.IsNullOrEmpty(settings.FactorioUsername) || string.IsNullOrEmpty(settings.FactorioToken))
                 {
-                    File.Copy(targetFilePath, globalModPath, true);
+                    var cachedMods = Directory.GetFiles(globalModsDir, $"{modName}_*.zip");
+                    if (cachedMods.Any())
+                    {
+                        string fallbackModPath = cachedMods.OrderByDescending(x => x).First();
+                        try
+                        {
+                            targetFilePath = Path.Combine(modsDir, Path.GetFileName(fallbackModPath));
+                            File.Copy(fallbackModPath, targetFilePath, true);
+                            copiedLocally = true;
+                            newFileName = Path.GetFileName(fallbackModPath);
+                        }
+                        catch { }
+                    }
                 }
-                catch { }
+                
+                if (!copiedLocally)
+                {
+                    if (string.IsNullOrEmpty(settings.FactorioUsername) || string.IsNullOrEmpty(settings.FactorioToken))
+                        return (false, "Factorio Mod Portal credentials are not configured in Settings.");
+
+                    string finalUrl = $"https://mods.factorio.com{downloadUrl}?username={Uri.EscapeDataString(settings.FactorioUsername.Trim())}&token={Uri.EscapeDataString(settings.FactorioToken.Trim())}";
+                    using HttpResponseMessage response = await _httpClient.GetAsync(finalUrl, HttpCompletionOption.ResponseHeadersRead);
+                    if (!response.IsSuccessStatusCode)
+                        return (false, $"Mod Portal returned {response.StatusCode} when attempting to download.");
+
+                    using FileStream fs = new(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None);
+                    await response.Content.CopyToAsync(fs);
+                    fs.Close();
+
+                    // Cache in global pool
+                    try
+                    {
+                        File.Copy(targetFilePath, globalModPath, true);
+                    }
+                    catch { }
+                }
             }
-            
+
             // Delete old file if successful and it's a different file
             if (!string.IsNullOrEmpty(oldFileName) && oldFileName != newFileName)
             {
@@ -309,8 +339,8 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
     {
         try
         {
-            string allInstancesDir = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
-                ? "/factorio" 
+            string allInstancesDir = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true"
+                ? "/factorio"
                 : _hostBaseMountPath.TrimEnd('/', '\\');
 
             HashSet<string> usedFileNames = [];
@@ -364,7 +394,7 @@ public class ModInfo
 
     [JsonPropertyName("downloads_count")]
     public int DownloadsCount { get; set; }
-    
+
     [JsonPropertyName("deprecated")]
     public bool Deprecated { get; set; }
 
@@ -382,7 +412,7 @@ public class ModRelease
 
     [JsonPropertyName("file_name")]
     public string FileName { get; set; } = string.Empty;
-    
+
     [JsonPropertyName("info_json")]
     public ModInfoJson InfoJson { get; set; } = new();
 }

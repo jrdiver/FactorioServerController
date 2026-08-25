@@ -14,8 +14,8 @@
 
     <div class="row g-4">
         <!-- Dashboard & Server Management Section -->
-        <div class="col-md-6">
-            <div class="glass-card h-100">
+        <div class="col-lg-6">
+            <div class="glass-card">
                 <h3 class="mb-4 border-bottom border-secondary pb-2"><i class="bi bi-grid-1x2-fill text-accent me-2"></i>Platform Guide</h3>
                 
                 <div class="mb-4">
@@ -32,12 +32,16 @@
                     <h5 class="text-white"><i class="bi bi-puzzle me-2"></i>Mod Management</h5>
                     <p class="text-muted">In the instance details page, you can search the official Factorio Mod Portal and install mods directly. The system automatically resolves dependencies and downloads the required files. Remember to restart the server to apply newly installed mods!</p>
                 </div>
+                <div class="mt-5 pt-3 border-top border-secondary">
+                    <h5 class="text-white"><i class="bi bi-info-circle me-2"></i>System Info</h5>
+                    <p class="text-muted mb-0">Factorio Server Controller Version: <strong>@AppVersion</strong></p>
+                </div>
             </div>
         </div>
 
         <!-- API Documentation Section -->
-        <div class="col-md-6">
-            <div class="glass-card h-100">
+        <div class="col-lg-6">
+            <div class="glass-card">
                 <h3 class="mb-4 border-bottom border-secondary pb-2"><i class="bi bi-code-slash text-accent me-2"></i>Developer API</h3>
                 <p class="text-muted">Factorio Manager exposes a secure REST API for integrating with external tools or downloading server files programmatically.</p>
                 
@@ -113,8 +117,16 @@
                     </div>
                     <p class="text-muted mb-0 small">Automatically compresses all mods for the specified instance into a single zip archive and initiates a download. Useful for syncing client modpacks!</p>
                 </div>
-
             </div>
         </div>
     </div>
 </div>
+
+@code {
+    private string AppVersion = "Unknown";
+
+    protected override void OnInitialized()
+    {
+        AppVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "Unknown";
+    }
+}
