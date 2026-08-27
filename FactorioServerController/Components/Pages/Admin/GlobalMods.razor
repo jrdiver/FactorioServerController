@@ -54,7 +54,6 @@
                 <tbody>
                     @foreach (LocalModInfo mod in cachedMods.OrderBy(m => m.Title))
                     {
-                        long sizeBytes = GetFileSize(mod.FileName);
                         <tr>
                             <td>
                                 <i class="bi bi-puzzle text-accent me-2"></i>
@@ -62,7 +61,7 @@
                             </td>
                             <td><span class="badge bg-dark border border-secondary text-light">@mod.Version</span></td>
                             <td class="text-secondary small">@mod.FileName</td>
-                            <td class="text-muted text-end">@FormatBytes(sizeBytes)</td>
+                            <td class="text-muted text-end">@FormatBytes(mod.SizeBytes)</td>
                             <td class="text-end">
                                 <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteModWithConfirm(mod.FileName)" title="Delete from Cache">
                                     <i class="bi bi-trash"></i>
@@ -88,31 +87,7 @@
     private void LoadMods()
     {
         cachedMods = ModManager.GetGlobalMods();
-        totalCacheSize = 0;
-        
-        string globalPath = ModManager.GetGlobalModsPath();
-        if (Directory.Exists(globalPath))
-        {
-            foreach (LocalModInfo mod in cachedMods)
-            {
-                string path = Path.Combine(globalPath, mod.FileName);
-                if (File.Exists(path))
-                {
-                    totalCacheSize += new FileInfo(path).Length;
-                }
-            }
-        }
-    }
-    
-    private long GetFileSize(string fileName)
-    {
-        string globalPath = ModManager.GetGlobalModsPath();
-        string path = Path.Combine(globalPath, fileName);
-        if (File.Exists(path))
-        {
-            return new FileInfo(path).Length;
-        }
-        return 0;
+        totalCacheSize = cachedMods.Sum(m => m.SizeBytes);
     }
     
     private string FormatBytes(long bytes)

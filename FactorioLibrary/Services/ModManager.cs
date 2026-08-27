@@ -151,7 +151,8 @@ public class ModManager(GlobalSettingsService settingsService, InstanceManager i
                             Title = title ?? name,
                             Version = version ?? "0.0.0",
                             FileName = Path.GetFileName(zipPath),
-                            IsEnabled = enabledMods.Contains(name)
+                            IsEnabled = enabledMods.Contains(name),
+                            SizeBytes = new FileInfo(zipPath).Length
                         });
                     }
                 }
@@ -311,7 +312,8 @@ public class ModManager(GlobalSettingsService settingsService, InstanceManager i
                                 Title = title ?? name,
                                 Version = version ?? "0.0.0",
                                 FileName = Path.GetFileName(zipPath),
-                                IsEnabled = false
+                                IsEnabled = false,
+                                SizeBytes = new FileInfo(zipPath).Length
                             });
                         }
                     }
@@ -385,6 +387,7 @@ public class LocalModInfo
     public string Version { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
     public bool IsEnabled { get; set; }
+    public long SizeBytes { get; set; }
 }
 
 public class ModInfo
