@@ -2,16 +2,14 @@
 @using FactorioLibrary
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
-@using FactorioLibrary.Objects
 @using FactorioLibrary.Services
-@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
 @inject NavigationManager Navigation
 @inject FactorioWebApi WebApi
-@inject IJSRuntime JSRuntime
+@inject IJSRuntime JsRuntime
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<IdentityUser> UserManager
 @implements IDisposable
@@ -31,9 +29,9 @@
     }
 </script>
 
-<PageTitle>Server Settings - @(Instance?.Name ?? "Loading...")</PageTitle>
+<PageTitle>Server Settings - @(instance?.Name ?? "Loading...")</PageTitle>
 
-@if (Instance == null)
+@if (instance == null)
 {
     <div class="d-flex justify-content-center mt-5">
         <div class="spinner-border text-accent" role="status">
@@ -43,9 +41,9 @@
 }
 else
 {
-    bool isRunning = InstanceManager.IsRunning(Instance.Id);
+    bool isRunning = InstanceManager.IsRunning(instance.Id);
 
-    <NavigationLock ConfirmExternalNavigation="IsUploading" OnBeforeInternalNavigation="OnBeforeInternalNavigation" />
+    <NavigationLock ConfirmExternalNavigation="isUploading" OnBeforeInternalNavigation="OnBeforeInternalNavigation" />
 
     <div class="container-fluid py-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
@@ -53,16 +51,16 @@ else
                 <a href="/" class="btn btn-glass-secondary mb-3"><i class="bi bi-arrow-left me-2"></i>Back to Dashboard</a>
                 <h1 class="display-6 text-accent mb-0">
                     <span class="status-dot @(isRunning ? "running" : "stopped")" title="@(isRunning ? "Running" : "Stopped")"></span>
-                    @Instance.Name
+                    @instance.Name
                 </h1>
             </div>
 
             <div class="d-flex gap-2">
-                @if (!IsViewer)
+                @if (!isViewer)
                 {
                     @if (isRunning)
                     {
-                        @if (IsStopping)
+                        @if (isStopping)
                         {
                             <button class="btn btn-glass-secondary text-danger" disabled><span class="spinner-border spinner-border-sm me-2"></span>Stopping...</button>
                         }
@@ -71,7 +69,7 @@ else
                             <button class="btn btn-glass-secondary text-danger" @onclick="StopServer"><i class="bi bi-stop-fill me-2"></i>Stop Server</button>
                         }
                     }
-                    else if (IsStarting)
+                    else if (isStarting)
                     {
                         <button class="btn btn-glass" disabled><span class="spinner-border spinner-border-sm me-2"></span>Starting...</button>
                     }
@@ -93,48 +91,48 @@ else
                 <div class="glass-card mb-4">
                     <h4 class="mb-4"><i class="bi bi-sliders me-2"></i>General Settings</h4>
 
-                    <EditForm Model="@Instance" OnValidSubmit="SaveChanges">
+                    <EditForm Model="@instance" OnValidSubmit="SaveChanges">
                         <DataAnnotationsValidator />
-                        <fieldset disabled="@IsViewer">
+                        <fieldset disabled="@isViewer">
 
                             <div class="mb-3">
                                 <label class="form-label text-muted">Server Name</label>
-                                <InputText @bind-Value="Instance.Name" class="form-control bg-transparent text-white border-secondary" />
-                                <ValidationMessage For="@(() => Instance.Name)" />
+                                <InputText @bind-Value="instance.Name" class="form-control bg-transparent text-white border-secondary" />
+                                <ValidationMessage For="@(() => instance.Name)" />
                             </div>
 
                             <div class="row mb-3">
                                 <div class="col-md-6">
                                     <label class="form-label text-muted">Game Port</label>
-                                    <InputNumber @bind-Value="Instance.Port" class="form-control bg-transparent text-white border-secondary" />
-                                    <ValidationMessage For="@(() => Instance.Port)" />
+                                    <InputNumber @bind-Value="instance.Port" class="form-control bg-transparent text-white border-secondary" />
+                                    <ValidationMessage For="@(() => instance.Port)" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label text-muted">Factorio Version</label>
-                                    <InputSelect @bind-Value="Instance.AssignedVersion" class="form-select bg-transparent text-white border-secondary">
-                                        @foreach (var v in AvailableVersions)
+                                    <InputSelect @bind-Value="instance.AssignedVersion" class="form-select bg-transparent text-white border-secondary">
+                                        @foreach (DockerTagInfo v in availableVersions)
                                         {
                                             <option value="@v.Tag" class="text-dark">@v.DisplayName</option>
                                         }
                                     </InputSelect>
-                                    <ValidationMessage For="@(() => Instance.AssignedVersion)" />
+                                    <ValidationMessage For="@(() => instance.AssignedVersion)" />
                                 </div>
                             </div>
 
-                            @if (!IsViewer)
+                            @if (!isViewer)
                             {
                                 <h5 class="mt-4 mb-3 text-muted border-bottom border-secondary pb-2"><i class="bi bi-terminal me-2"></i>RCON Configuration</h5>
                                 <div class="row mb-4">
                                     <div class="col-md-6">
                                         <label class="form-label text-muted">RCON Port</label>
-                                        <InputNumber @bind-Value="Instance.RconPort" autocomplete="new-password" class="form-control bg-transparent text-white border-secondary" />
+                                        <InputNumber @bind-Value="instance.RconPort" autocomplete="new-password" class="form-control bg-transparent text-white border-secondary" />
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label text-muted">RCON Password</label>
                                         <div class="input-group">
-                                            <InputText @bind-Value="Instance.RconPassword" type="@(ShowRconPassword ? "text" : "password")" autocomplete="new-password" class="form-control bg-transparent text-white border-secondary" />
-                                            <button type="button" class="btn btn-outline-secondary border-secondary text-muted" @onclick="() => ShowRconPassword = !ShowRconPassword">
-                                                <i class="bi @(ShowRconPassword ? "bi-eye-slash" : "bi-eye")"></i>
+                                            <InputText @bind-Value="instance.RconPassword" type="@(showRconPassword ? "text" : "password")" autocomplete="new-password" class="form-control bg-transparent text-white border-secondary" />
+                                            <button type="button" class="btn btn-outline-secondary border-secondary text-muted" @onclick="() => showRconPassword = !showRconPassword">
+                                                <i class="bi @(showRconPassword ? "bi-eye-slash" : "bi-eye")"></i>
                                             </button>
                                         </div>
                                     </div>
@@ -142,7 +140,7 @@ else
                             }
 
                             <div class="d-flex justify-content-between align-items-center">
-                                @if (ShowSaveSuccess)
+                                @if (showSaveSuccess)
                                 {
                                     <span class="text-success"><i class="bi bi-check-circle-fill me-2"></i>Settings saved successfully!</span>
                                 }
@@ -150,7 +148,7 @@ else
                                 {
                                     <span></span>
                                 }
-                                @if (!IsViewer)
+                                @if (!isViewer)
                                 {
                                     <button type="submit" class="btn btn-glass"><i class="bi bi-save-fill me-2"></i>Save Changes</button>
                                 }
@@ -163,14 +161,14 @@ else
                     <div class="d-flex justify-content-between align-items-center mb-4">
                         <h4 class="mb-0"><i class="bi bi-floppy me-2"></i>Saves Management</h4>
                         <div>
-                            @if (!IsViewer)
+                            @if (!isViewer)
                             {
                                 <InputFile OnChange="UploadSaveFile" class="d-none" id="saveUpload" accept=".zip" />
-                                <button class="btn btn-glass-secondary" type="button" onclick="document.getElementById('saveUpload').click()" disabled="@IsUploading">
-                                    @if (IsUploading)
+                                <button class="btn btn-glass-secondary" type="button" onclick="document.getElementById('saveUpload').click()" disabled="@isUploading">
+                                    @if (isUploading)
                                     {
                                         <span class="spinner-border spinner-border-sm me-2"></span>
-                                        <span>Uploading... @UploadProgress%</span>
+                                        <span>Uploading... @uploadProgress%</span>
                                     }
                                     else
                                     {
@@ -181,14 +179,14 @@ else
                         </div>
                     </div>
 
-                    @if (IsUploading)
+                    @if (isUploading)
                     {
                         <div class="progress mb-4" style="height: 10px; background-color: rgba(255,255,255,0.1);">
-                            <div class="progress-bar bg-accent progress-bar-striped progress-bar-animated" role="progressbar" style="width: @UploadProgress%"></div>
+                            <div class="progress-bar bg-accent progress-bar-striped progress-bar-animated" role="progressbar" style="width: @uploadProgress%"></div>
                         </div>
                     }
 
-                    @if (HasCorruptedTempSave)
+                    @if (hasCorruptedTempSave)
                     {
                         <div class="alert alert-warning mb-4">
                             <i class="bi bi-exclamation-triangle-fill me-2"></i>
@@ -196,16 +194,16 @@ else
                         </div>
                     }
 
-                    @if (!string.IsNullOrEmpty(UploadError))
+                    @if (!string.IsNullOrEmpty(uploadError))
                     {
-                        <div class="alert alert-danger">@UploadError</div>
+                        <div class="alert alert-danger">@uploadError</div>
                     }
 
-                    @if (SaveFiles == null)
+                    @if (saveFiles == null)
                     {
                         <div class="text-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span> Loading saves...</div>
                     }
-                    else if (!SaveFiles.Any())
+                    else if (!saveFiles.Any())
                     {
                         <div class="text-center text-muted my-4">
                             <i class="bi bi-folder2-open display-4 mb-3 d-block"></i>
@@ -226,7 +224,7 @@ else
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (SaveFileInfo save in SaveFiles)
+                                    @foreach (SaveFileInfo save in saveFiles)
                                     {
                                         <tr>
                                             <td>
@@ -245,16 +243,16 @@ else
                                             </td>
                                             <td class="text-muted local-time" data-utc="@save.LastModified.ToString("O")" title="@save.LastModified.ToString("MMM dd, yyyy h:mm tt 'UTC'")">
                                                 @GetFriendlyTime(save.LastModified)
-                                                @if (string.IsNullOrEmpty(Instance?.ActiveSaveName) && save == SaveFiles.First())
+                                                @if (string.IsNullOrEmpty(instance?.ActiveSaveName) && save == saveFiles.First())
                                                 {
                                                     <span class="badge bg-secondary ms-2" title="Will auto-load because it is the newest save">Auto-Active</span>
                                                 }
                                             </td>
                                             <td class="text-muted text-end">@FormatBytes(save.SizeBytes)</td>
                                             <td class="text-end">
-                                                @if (!IsViewer)
+                                                @if (!isViewer)
                                                 {
-                                                    @if (Instance?.ActiveSaveName == save.Name)
+                                                    @if (instance?.ActiveSaveName == save.Name)
                                                     {
                                                         <button class="btn btn-sm btn-glass-secondary text-success me-2" @onclick="ClearActiveSave" title="Currently Active (Click to clear)">
                                                             <i class="bi bi-star-fill"></i> Active
@@ -270,7 +268,7 @@ else
                                                 <a href="/api/instances/@Id/saves/@Uri.EscapeDataString(save.Name)" download class="btn btn-sm btn-glass-secondary me-2" title="Download">
                                                     <i class="bi bi-download"></i>
                                                 </a>
-                                                @if (!IsViewer)
+                                                @if (!isViewer)
                                                 {
                                                     <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteSaveFile(save.Name)" title="Delete">
                                                         <i class="bi bi-trash"></i>
@@ -284,13 +282,13 @@ else
                         </div>
                         <div class="text-muted small mt-3">
                             <i class="bi bi-info-circle me-1"></i>
-                            @if (string.IsNullOrEmpty(Instance?.ActiveSaveName))
+                            @if (string.IsNullOrEmpty(instance?.ActiveSaveName))
                             {
                                 <span>The Factorio server automatically loads the most recently modified save file when it starts.</span>
                             }
                             else
                             {
-                                <span>The Factorio server is locked to load <strong class="text-white">@Instance.ActiveSaveName</strong> when it starts.</span>
+                                <span>The Factorio server is locked to load <strong class="text-white">@instance.ActiveSaveName</strong> when it starts.</span>
                             }
                         </div>
                     }
@@ -303,7 +301,7 @@ else
                     <div class="d-grid gap-2">
                         <a href="/instance/@Id/mods" class="btn btn-glass-secondary text-start"><i class="bi bi-puzzle me-2"></i>Manage Mods</a>
                         <a href="/instance/@Id/console" class="btn btn-glass-secondary text-start"><i class="bi bi-terminal me-2"></i>Server Console</a>
-                        @if (!IsViewer)
+                        @if (!isViewer)
                         {
                             <a href="/instance/@Id/settings" class="btn btn-glass-secondary text-start"><i class="bi bi-file-earmark-text me-2"></i>Edit server-settings.json</a>
                         }
@@ -321,7 +319,7 @@ else
     </div>
 }
 
-@if (ShowResetConfirmation)
+@if (showResetConfirmation)
 {
     <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.7);">
         <div class="modal-dialog modal-dialog-centered">
@@ -331,7 +329,7 @@ else
                     <button type="button" class="btn-close btn-close-white" @onclick="CancelResetConfigs"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-white mb-2">Are you sure you want to reset configs for <strong>@Instance?.Name</strong>?</p>
+                    <p class="text-white mb-2">Are you sure you want to reset configs for <strong>@instance?.Name</strong>?</p>
                     <div class="alert alert-warning mb-0">
                         <i class="bi bi-exclamation-circle me-2"></i>
                         <strong>Warning:</strong> This will completely wipe the <code>config/</code> directory and <code>player-data.json</code>.
@@ -350,7 +348,7 @@ else
     </div>
 }
 
-@if (ShowDeleteConfirmation)
+@if (showDeleteConfirmation)
 {
     <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.7);">
         <div class="modal-dialog modal-dialog-centered">
@@ -360,7 +358,7 @@ else
                     <button type="button" class="btn-close btn-close-white" @onclick="CancelDeleteServer"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-white mb-2">Are you sure you want to delete <strong>@Instance?.Name</strong>?</p>
+                    <p class="text-white mb-2">Are you sure you want to delete <strong>@instance?.Name</strong>?</p>
                     <div class="alert alert-warning mb-0">
                         <i class="bi bi-exclamation-circle me-2"></i>
                         <strong>Warning:</strong> This will completely remove the server, delete its Docker container, and permanently erase all save files, configs, and mods from the disk!
@@ -370,8 +368,8 @@ else
                 </div>
                 <div class="modal-footer border-secondary">
                     <button type="button" class="btn btn-glass-secondary" @onclick="CancelDeleteServer">Cancel</button>
-                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteServer" disabled="@IsDeleting">
-                        @if (IsDeleting)
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDeleteServer" disabled="@isDeleting">
+                        @if (isDeleting)
                         {
                             <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
                             <span>Deleting...</span>
@@ -391,22 +389,22 @@ else
     [Parameter]
     public int Id { get; set; }
 
-    private ServerInstance? Instance;
-    private List<DockerTagInfo> AvailableVersions = new();
-    private bool ShowSaveSuccess = false;
-    private List<SaveFileInfo>? SaveFiles;
-    private bool HasUpdateAvailable = false;
-    private bool IsStarting = false;
-    private bool IsStopping = false;
-    private bool IsUploading = false;
-    private string? UploadError;
-    private int UploadProgress = 0;
-    private bool ShowDeleteConfirmation = false;
-    private bool IsDeleting = false;
-    private bool ShowResetConfirmation = false;
-    private bool ShowRconPassword = false;
-    private bool HasCorruptedTempSave = false;
-    private bool IsViewer = false;
+    private ServerInstance? instance;
+    private List<DockerTagInfo> availableVersions = new();
+    private bool showSaveSuccess;
+    private List<SaveFileInfo>? saveFiles;
+    private bool hasUpdateAvailable = false;
+    private bool isStarting;
+    private bool isStopping;
+    private bool isUploading;
+    private string? uploadError;
+    private int uploadProgress;
+    private bool showDeleteConfirmation;
+    private bool isDeleting;
+    private bool showResetConfirmation;
+    private bool showRconPassword;
+    private bool hasCorruptedTempSave;
+    private bool isViewer;
 
     private class SaveFileInfo
     {
@@ -416,8 +414,8 @@ else
         public string SaveVersion { get; set; } = "";
     }
 
-    private PeriodicTimer? _timer;
-    private CancellationTokenSource _cts = new();
+    private PeriodicTimer? timer;
+    private CancellationTokenSource cts = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -439,11 +437,11 @@ else
                 Navigation.NavigateTo("/");
                 return;
             }
-            IsViewer = access.AccessLevel == ServerAccessLevel.Viewer;
+            isViewer = access.AccessLevel == ServerAccessLevel.Viewer;
         }
 
-        Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
-        if (Instance == null)
+        instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
+        if (instance == null)
         {
             Navigation.NavigateTo("/");
             return;
@@ -453,12 +451,13 @@ else
 
         try
         {
-            AvailableVersions = await WebApi.GetDockerTagsAsync();
+            availableVersions = await WebApi.GetDockerTagsAsync();
         }
         catch
         {
             // Fallback if API fails
-            AvailableVersions = new List<DockerTagInfo> {
+            availableVersions = new()
+            {
                 new("latest", "latest"),
                 new("stable", "stable"),
                 new("2.1", "2.1"),
@@ -466,7 +465,7 @@ else
             };
         }
 
-        _timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        timer = new(TimeSpan.FromSeconds(2));
         _ = PollStatusAsync();
     }
 
@@ -474,12 +473,12 @@ else
     {
         try
         {
-            while (await _timer!.WaitForNextTickAsync(_cts.Token))
+            while (await timer!.WaitForNextTickAsync(cts.Token))
             {
                 bool isHidden = false;
                 try
                 {
-                    isHidden = await JSRuntime.InvokeAsync<bool>("eval", "document.hidden");
+                    isHidden = await JsRuntime.InvokeAsync<bool>("eval", "document.hidden");
                 }
                 catch { }
 
@@ -496,59 +495,59 @@ else
     {
         try
         {
-            await JSRuntime.InvokeVoidAsync("formatLocalTimes");
+            await JsRuntime.InvokeVoidAsync("formatLocalTimes");
         }
         catch { }
     }
 
     private async Task SaveChanges()
     {
-        if (Instance != null)
+        if (instance != null)
         {
-            DbContext.ServerInstances.Update(Instance);
+            DbContext.ServerInstances.Update(instance);
             await DbContext.SaveChangesAsync();
 
-            ShowSaveSuccess = true;
+            showSaveSuccess = true;
             StateHasChanged();
 
             // Hide success message after 3 seconds
             await Task.Delay(3000);
-            ShowSaveSuccess = false;
+            showSaveSuccess = false;
             StateHasChanged();
         }
     }
 
     private void PromptResetConfigs()
     {
-        ShowResetConfirmation = true;
+        showResetConfirmation = true;
     }
 
     private void CancelResetConfigs()
     {
-        ShowResetConfirmation = false;
+        showResetConfirmation = false;
     }
 
     private void ConfirmResetConfigs()
     {
-        ShowResetConfirmation = false;
+        showResetConfirmation = false;
         InstanceManager.FactoryResetConfigs(Id);
         StateHasChanged();
     }
 
     private async Task StartServer()
     {
-        if (Instance != null)
+        if (instance != null)
         {
-            IsStarting = true;
+            isStarting = true;
             StateHasChanged();
 
-            var result = await InstanceManager.StartInstanceAsync(Instance);
+            (bool Success, bool CleanedCorruptSave) result = await InstanceManager.StartInstanceAsync(instance);
 
-            IsStarting = false;
+            isStarting = false;
 
             if (result.CleanedCorruptSave)
             {
-                HasCorruptedTempSave = false;
+                hasCorruptedTempSave = false;
             }
 
             StateHasChanged();
@@ -557,37 +556,37 @@ else
 
     private async Task StopServer()
     {
-        IsStopping = true;
+        isStopping = true;
         StateHasChanged();
 
         await InstanceManager.StopInstanceAsync(Id);
 
-        IsStopping = false;
+        isStopping = false;
         StateHasChanged();
     }
 
     private void PromptDeleteServer()
     {
-        ShowDeleteConfirmation = true;
+        showDeleteConfirmation = true;
     }
 
     private void CancelDeleteServer()
     {
-        ShowDeleteConfirmation = false;
+        showDeleteConfirmation = false;
     }
 
     private async Task ConfirmDeleteServer()
     {
-        if (Instance != null)
+        if (instance != null)
         {
-            IsDeleting = true;
+            isDeleting = true;
             StateHasChanged();
 
             // Delete docker container and all host files
             await InstanceManager.DeleteInstanceDataAsync(Id);
 
             // Remove from DB
-            DbContext.ServerInstances.Remove(Instance);
+            DbContext.ServerInstances.Remove(instance);
             await DbContext.SaveChangesAsync();
             Navigation.NavigateTo("/");
         }
@@ -595,9 +594,9 @@ else
 
     private async Task OnBeforeInternalNavigation(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
     {
-        if (IsUploading)
+        if (isUploading)
         {
-            bool isConfirmed = await JSRuntime.InvokeAsync<bool>("confirm", "A save file upload is currently in progress. If you leave this page, the upload will be cancelled. Are you sure you want to leave?");
+            bool isConfirmed = await JsRuntime.InvokeAsync<bool>("confirm", "A save file upload is currently in progress. If you leave this page, the upload will be cancelled. Are you sure you want to leave?");
             if (!isConfirmed)
             {
                 context.PreventNavigation();
@@ -615,11 +614,11 @@ else
                 Directory.CreateDirectory(savesDir);
             }
 
-            DirectoryInfo dirInfo = new DirectoryInfo(savesDir);
+            DirectoryInfo dirInfo = new(savesDir);
 
-            HasCorruptedTempSave = dirInfo.GetFiles("*.tmp.zip").Any();
+            hasCorruptedTempSave = dirInfo.GetFiles("*.tmp.zip").Any();
 
-            SaveFiles = dirInfo.GetFiles("*.zip")
+            saveFiles = dirInfo.GetFiles("*.zip")
                             .Where(f => !f.Name.EndsWith(".tmp.zip", StringComparison.OrdinalIgnoreCase))
                             .Select(f => new SaveFileInfo
                             {
@@ -633,7 +632,7 @@ else
         }
         catch (Exception)
         {
-            SaveFiles = new List<SaveFileInfo>();
+            saveFiles = new();
         }
     }
 
@@ -643,13 +642,13 @@ else
         if (file == null) return;
         if (!file.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
         {
-            UploadError = "Only .zip save files are allowed.";
+            uploadError = "Only .zip save files are allowed.";
             return;
         }
 
-        IsUploading = true;
-        UploadProgress = 0;
-        UploadError = null;
+        isUploading = true;
+        uploadProgress = 0;
+        uploadError = null;
         StateHasChanged();
 
         try
@@ -663,7 +662,7 @@ else
 
             // Allow up to 2GB max file size
             await using Stream stream = file.OpenReadStream(2147483648);
-            await using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+            await using FileStream fs = new(path, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
 
             byte[] buffer = new byte[81920];
             int read;
@@ -672,9 +671,9 @@ else
                 await fs.WriteAsync(buffer, 0, read);
                 bytesRead += read;
                 int newProgress = (int)((double)bytesRead / totalBytes * 100);
-                if (newProgress > UploadProgress)
+                if (newProgress > uploadProgress)
                 {
-                    UploadProgress = newProgress;
+                    uploadProgress = newProgress;
                     StateHasChanged();
                 }
             }
@@ -683,11 +682,11 @@ else
         }
         catch (Exception ex)
         {
-            UploadError = $"Upload failed: {ex.Message}";
+            uploadError = $"Upload failed: {ex.Message}";
         }
         finally
         {
-            IsUploading = false;
+            isUploading = false;
             StateHasChanged();
         }
     }
@@ -722,18 +721,18 @@ else
 
     private async Task SetActiveSave(string filename)
     {
-        if (Instance != null)
+        if (instance != null)
         {
-            Instance.ActiveSaveName = filename;
+            instance.ActiveSaveName = filename;
             await SaveChanges();
         }
     }
 
     private async Task ClearActiveSave()
     {
-        if (Instance != null)
+        if (instance != null)
         {
-            Instance.ActiveSaveName = null;
+            instance.ActiveSaveName = null;
             await SaveChanges();
         }
     }
@@ -768,7 +767,7 @@ else
             if (entry != null)
             {
                 using Stream stream = entry.Open();
-                using System.IO.BinaryReader reader = new System.IO.BinaryReader(stream);
+                using System.IO.BinaryReader reader = new(stream);
                 ushort major = reader.ReadUInt16();
                 ushort minor = reader.ReadUInt16();
                 ushort patch = reader.ReadUInt16();
@@ -785,8 +784,8 @@ else
 
     public void Dispose()
     {
-        _cts.Cancel();
-        _cts.Dispose();
-        _timer?.Dispose();
+        cts.Cancel();
+        cts.Dispose();
+        timer?.Dispose();
     }
 }

@@ -4,7 +4,6 @@
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
-@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
 @implements IAsyncDisposable
@@ -12,13 +11,13 @@
 @inject InstanceManager InstanceManager
 @inject FactorioLibrary.Services.RconService RconService
 @inject NavigationManager Navigation
-@inject IJSRuntime JSRuntime
+@inject IJSRuntime JsRuntime
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<IdentityUser> UserManager
 
-<PageTitle>Server Console - @(Instance?.Name ?? "Loading...")</PageTitle>
+<PageTitle>Server Console - @(instance?.Name ?? "Loading...")</PageTitle>
 
-@if (Instance == null)
+@if (instance == null)
 {
     <div class="d-flex justify-content-center mt-5">
         <div class="spinner-border text-accent" role="status">
@@ -60,17 +59,17 @@ else
             <div>
                 <h2 class="mb-1 text-white">
                     <i class="bi bi-terminal-fill me-2 text-accent"></i>
-                    @Instance.Name Console
+                    @instance.Name Console
                 </h2>
                 <div class="text-muted">Live server logs and RCON interface</div>
             </div>
             <div class="d-flex gap-2">
                 <div class="form-check form-switch mt-2 me-3">
-                    <input class="form-check-input" type="checkbox" id="wordWrapToggle" @bind="WrapLogs">
+                    <input class="form-check-input" type="checkbox" id="wordWrapToggle" @bind="wrapLogs">
                     <label class="form-check-label text-muted" for="wordWrapToggle">Word Wrap</label>
                 </div>
                 
-                <a href="/instance/@Instance.Id" class="btn btn-glass-secondary">
+                <a href="/instance/@instance.Id" class="btn btn-glass-secondary">
                     <i class="bi bi-arrow-left me-2"></i>Back to Details
                 </a>
             </div>
@@ -78,47 +77,47 @@ else
 
         <div class="glass-card flex-grow-1 d-flex flex-column overflow-hidden p-0 border border-secondary" style="min-height: 0; min-width: 0; width: 100%;">
             <div id="console-output" class="flex-grow-1 p-3" style="overflow-y: scroll; overflow-x: auto; min-height: 0; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.9rem; background-color: #0f111a;">
-                @if (!InstanceManager.IsRunning(Instance!.Id))
+                @if (!InstanceManager.IsRunning(instance!.Id))
                 {
                     <div class="text-danger">Server is currently offline. Start the server to view live console logs.</div>
                 }
                 else
                 {
-                    @foreach (string log in Logs)
+                    @foreach (string log in logs)
                     {
-                        <div style="white-space: @(WrapLogs ? "pre-wrap" : "pre"); word-wrap: @(WrapLogs ? "break-word" : "normal"); color: #d7d7d7;">@log</div>
+                        <div style="white-space: @(wrapLogs ? "pre-wrap" : "pre"); word-wrap: @(wrapLogs ? "break-word" : "normal"); color: #d7d7d7;">@log</div>
                     }
                 }
             </div>
             
             <div class="bg-dark p-3 border-top border-secondary">
-                @if (IsViewer)
+                @if (isViewer)
                 {
                     <div class="text-muted fst-italic">You have Viewer access to this server and cannot send RCON commands.</div>
                 }
                 else
                 {
                     <div class="d-flex flex-wrap gap-2 mb-2">
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/time"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/time"))" disabled="@(!InstanceManager.IsRunning(instance!.Id))">
                             <i class="bi bi-clock me-1"></i> Time
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/players"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/players"))" disabled="@(!InstanceManager.IsRunning(instance!.Id))">
                             <i class="bi bi-people me-1"></i> Players
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/server-save"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/server-save"))" disabled="@(!InstanceManager.IsRunning(instance!.Id))">
                             <i class="bi bi-save me-1"></i> Save Server
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/admins"))" disabled="@(!InstanceManager.IsRunning(Instance!.Id))">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/admins"))" disabled="@(!InstanceManager.IsRunning(instance!.Id))">
                             <i class="bi bi-shield-lock me-1"></i> Admins
                         </button>
                     </div>
                     <form @onsubmit="SendRconCommand" class="d-flex gap-2">
-                        <input type="text" @bind="RconInput" @bind:event="oninput" 
+                        <input type="text" @bind="rconInput" @bind:event="oninput" 
                                class="form-control bg-transparent text-white border-secondary flex-grow-1" 
                                placeholder="Enter RCON command (e.g. time, players, save)..." 
-                               disabled="@(!InstanceManager.IsRunning(Instance!.Id))" />
+                               disabled="@(!InstanceManager.IsRunning(instance!.Id))" />
                                
-                        <button type="submit" class="btn btn-glass" disabled="@(!InstanceManager.IsRunning(Instance!.Id) || string.IsNullOrWhiteSpace(RconInput))">
+                        <button type="submit" class="btn btn-glass" disabled="@(!InstanceManager.IsRunning(instance!.Id) || string.IsNullOrWhiteSpace(rconInput))">
                             <span><i class="bi bi-send-fill me-2"></i>Send</span>
                         </button>
                     </form>
@@ -132,17 +131,17 @@ else
     [Parameter]
     public int Id { get; set; }
 
-    private ServerInstance? Instance;
-    private List<string> Logs = new();
-    private string RconInput = "";
-    private bool WrapLogs = false; // Default to no wrap as requested
-    private bool IsViewer = false;
+    private ServerInstance? instance;
+    private List<string> logs = new();
+    private string rconInput = "";
+    private bool wrapLogs; // Default to no wrap as requested
+    private bool isViewer;
     
-    private MultiplexedStream? _logStream;
-    private CancellationTokenSource _cts = new();
-    private bool _isConnecting = false;
-    private List<string> _pendingLogs = new();
-    private readonly object _logLock = new();
+    private MultiplexedStream? logStream;
+    private CancellationTokenSource cts = new();
+    private bool isConnecting;
+    private List<string> pendingLogs = new();
+    private readonly object logLock = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -164,49 +163,49 @@ else
                 Navigation.NavigateTo("/");
                 return;
             }
-            IsViewer = access.AccessLevel == ServerAccessLevel.Viewer;
+            isViewer = access.AccessLevel == ServerAccessLevel.Viewer;
         }
 
-        Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
-        if (Instance == null)
+        instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
+        if (instance == null)
         {
             Navigation.NavigateTo("/");
             return;
         }
 
-        if (InstanceManager.IsRunning(Instance.Id))
+        if (InstanceManager.IsRunning(instance.Id))
         {
             await StartLogStreamAsync();
         }
         
         // Background task to flush pending logs to the UI exactly 10 times a second
         _ = Task.Run(async () => {
-            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+            using PeriodicTimer timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
             try {
-                while (await timer.WaitForNextTickAsync(_cts.Token)) {
+                while (await timer.WaitForNextTickAsync(cts.Token)) {
                     bool hasLogs = false;
-                    lock (_logLock) {
-                        hasLogs = _pendingLogs.Count > 0;
+                    lock (logLock) {
+                        hasLogs = pendingLogs.Count > 0;
                     }
                     
                     if (hasLogs) {
                         await InvokeAsync(() => {
-                            lock (_logLock) {
-                                Logs.AddRange(_pendingLogs);
-                                _pendingLogs.Clear();
+                            lock (logLock) {
+                                logs.AddRange(pendingLogs);
+                                pendingLogs.Clear();
                             }
                             // Keep max 500 lines to prevent DOM bloat
-                            if (Logs.Count > 500) {
-                                Logs.RemoveRange(0, Logs.Count - 500);
+                            if (logs.Count > 500) {
+                                logs.RemoveRange(0, logs.Count - 500);
                             }
                             StateHasChanged();
                         });
                         
                         // Autoscroll is now handled natively by JS MutationObserver in the browser
                     }
-                    else if (_logStream == null && InstanceManager.IsRunning(Instance!.Id) && !_isConnecting)
+                    else if (logStream == null && InstanceManager.IsRunning(instance!.Id) && !isConnecting)
                     {
-                        _isConnecting = true;
+                        isConnecting = true;
                         // Reconnect to log stream if the server started in the background
                         _ = StartLogStreamAsync();
                         await InvokeAsync(StateHasChanged);
@@ -222,7 +221,7 @@ else
         {
             try 
             {
-                await JSRuntime.InvokeVoidAsync("setupConsoleAutoScroll");
+                await JsRuntime.InvokeVoidAsync("setupConsoleAutoScroll");
             }
             catch { }
         }
@@ -230,10 +229,10 @@ else
 
     private async Task StartLogStreamAsync()
     {
-        _logStream = await InstanceManager.GetLogStreamAsync(Instance!.Id, _cts.Token);
-        _isConnecting = false;
+        logStream = await InstanceManager.GetLogStreamAsync(instance!.Id, cts.Token);
+        isConnecting = false;
         
-        if (_logStream != null)
+        if (logStream != null)
         {
             // Start reading logs in the background without awaiting
             _ = ReadLogsLoopAsync();
@@ -243,13 +242,13 @@ else
     private async Task ReadLogsLoopAsync()
     {
         byte[] buffer = new byte[81920];
-        StringBuilder lineBuffer = new StringBuilder();
+        StringBuilder lineBuffer = new();
         
         try
         {
-            while (!_cts.IsCancellationRequested && _logStream != null)
+            while (!cts.IsCancellationRequested && logStream != null)
             {
-                MultiplexedStream.ReadResult result = await _logStream.ReadOutputAsync(buffer, 0, buffer.Length, _cts.Token);
+                MultiplexedStream.ReadResult result = await logStream.ReadOutputAsync(buffer, 0, buffer.Length, cts.Token);
                 
                 if (result.EOF) break;
 
@@ -262,25 +261,25 @@ else
                     
                     int newlineIndex;
                     
-                    lock (_logLock) 
+                    lock (logLock) 
                     {
                         while ((newlineIndex = currentBuffer.IndexOf('\n')) >= 0)
                         {
                             string logLine = currentBuffer.Substring(0, newlineIndex).TrimEnd('\r');
                             
-                            if (Instance != null)
+                            if (instance != null)
                             {
-                                if (!string.IsNullOrEmpty(Instance.RconPassword))
+                                if (!string.IsNullOrEmpty(instance.RconPassword))
                                 {
-                                    logLine = logLine.Replace(Instance.RconPassword, "<private>");
+                                    logLine = logLine.Replace(instance.RconPassword, "<private>");
                                 }
-                                if (Instance.RconPort > 0)
+                                if (instance.RconPort > 0)
                                 {
-                                    logLine = logLine.Replace(Instance.RconPort.ToString(), "<private>");
+                                    logLine = logLine.Replace(instance.RconPort.ToString(), "<private>");
                                 }
                             }
                             
-                            _pendingLogs.Add(logLine);
+                            pendingLogs.Add(logLine);
                             currentBuffer = currentBuffer.Substring(newlineIndex + 1);
                         }
                     }
@@ -297,33 +296,33 @@ else
         catch (Exception ex)
         {
             await InvokeAsync(() => {
-                Logs.Add($"[Error reading logs: {ex.Message}]");
+                logs.Add($"[Error reading logs: {ex.Message}]");
                 StateHasChanged();
             });
         }
         finally
         {
-            if (_logStream != null)
+            if (logStream != null)
             {
-                _logStream.Dispose();
-                _logStream = null;
+                logStream.Dispose();
+                logStream = null;
             }
         }
     }
 
     private async Task SendPresetCommand(string cmd)
     {
-        RconInput = cmd;
+        rconInput = cmd;
         await SendRconCommand();
     }
 
     private async Task SendRconCommand()
     {
-        if (string.IsNullOrWhiteSpace(RconInput) || Instance == null || !InstanceManager.IsRunning(Instance.Id))
+        if (string.IsNullOrWhiteSpace(rconInput) || instance == null || !InstanceManager.IsRunning(instance.Id))
             return;
 
-        string command = RconInput;
-        RconInput = ""; // Clear input immediately
+        string command = rconInput;
+        rconInput = ""; // Clear input immediately
         await InvokeAsync(StateHasChanged);
         
         try
@@ -341,27 +340,27 @@ else
             // A Factorio server spun up by the controller uses the default bridge network unless specified.
             // However, the Controller mapped the RconPort to the Host! So we can use host.docker.internal or 172.17.0.1 (Docker Host IP)
             // Or if we run native on windows, "127.0.0.1". 
-            Logs.Add($"> {command}"); // Echo locally
+            logs.Add($"> {command}"); // Echo locally
             await InvokeAsync(StateHasChanged);
 
-            string response = await RconService.SendCommandAsync(Instance.Id, Instance.RconPort, Instance.RconPassword, command);
+            string response = await RconService.SendCommandAsync(instance.Id, instance.RconPort, instance.RconPassword, command);
             
             if (response.StartsWith("Error"))
             {
-                Logs.Add($"[RCON Error] Could not connect to RCON port. Details: {response}");
+                logs.Add($"[RCON Error] Could not connect to RCON port. Details: {response}");
             }
             else if (!string.IsNullOrWhiteSpace(response))
             {
-                Logs.Add($"[RCON] {response.Trim()}");
+                logs.Add($"[RCON] {response.Trim()}");
             }
             else
             {
-                Logs.Add($"[RCON] (Command executed successfully, no output returned)");
+                logs.Add($"[RCON] (Command executed successfully, no output returned)");
             }
         }
         catch (Exception ex)
         {
-            Logs.Add($"[RCON Exception] {ex.Message}");
+            logs.Add($"[RCON Exception] {ex.Message}");
         }
         finally
         {
@@ -373,11 +372,11 @@ else
 
     public async ValueTask DisposeAsync()
     {
-        _cts.Cancel();
-        if (_logStream != null)
+        cts.Cancel();
+        if (logStream != null)
         {
-            _logStream.Dispose();
+            logStream.Dispose();
         }
-        _cts.Dispose();
+        cts.Dispose();
     }
 }

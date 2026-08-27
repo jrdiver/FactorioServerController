@@ -1,12 +1,12 @@
-using FactorioLibrary.Objects;
 using FactorioLibrary.Internal;
+using FactorioLibrary.Objects;
 
 namespace FactorioLibrary.Services;
 
 public class VersionManager(FactorioWebApi webApi, string versionsDirectory = "factorio_versions", HttpClient? httpClient = null)
 {
-    private readonly FactorioWebApi _webApi = webApi;
-    private readonly HttpClient _httpClient = httpClient ?? Shared.HttpClient;
+    private readonly FactorioWebApi webApi = webApi;
+    private readonly HttpClient httpClient = httpClient ?? Shared.HttpClient;
 
     public async Task<string> DownloadVersionAsync(FactorioRelease release)
     {
@@ -37,10 +37,10 @@ public class VersionManager(FactorioWebApi webApi, string versionsDirectory = "f
 
         // This is a placeholder for the actual download implementation which would write the stream to a file.
         // We will mock this in tests.
-        using HttpResponseMessage response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+        using HttpResponseMessage response = await httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
 
-        using FileStream fs = new(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
+        await using FileStream fs = new(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
         await response.Content.CopyToAsync(fs);
 
         return filePath;

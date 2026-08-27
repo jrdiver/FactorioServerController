@@ -17,7 +17,7 @@ namespace FactorioLibrary.Models
         public int MaxPlayers { get; set; } = 0;
 
         [JsonPropertyName("visibility")]
-        public ServerVisibility Visibility { get; set; } = new ServerVisibility();
+        public ServerVisibility Visibility { get; set; } = new();
 
         [JsonPropertyName("username")]
         public string Username { get; set; } = "";

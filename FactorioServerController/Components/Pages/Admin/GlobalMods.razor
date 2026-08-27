@@ -1,9 +1,8 @@
 @page "/admin/global-mods"
 @using FactorioLibrary.Services
-@using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Roles = "Administrator")]
 @inject ModManager ModManager
-@inject IJSRuntime JS
+@inject IJSRuntime Js
 
 <PageTitle>Global Mod Pool - Factorio Server Controller</PageTitle>
 
@@ -22,11 +21,11 @@
         The Global Mod Pool caches all mods downloaded from the mod portal or uploaded by users. This speeds up syncing and saves bandwidth by providing local copies to instances. It also acts as a rescue cache if a mod is deleted from the Factorio Mod Portal.
     </div>
 
-    @if (CachedMods == null)
+    @if (cachedMods == null)
     {
         <div class="text-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span> Loading cached mods...</div>
     }
-    else if (!CachedMods.Any())
+    else if (!cachedMods.Any())
     {
         <div class="text-center text-muted my-5">
             <i class="bi bi-inbox display-1 mb-3 d-block text-secondary"></i>
@@ -37,8 +36,8 @@
     else
     {
         <div class="mb-3 d-flex justify-content-between align-items-center">
-            <span class="text-muted">Total Cached: <strong class="text-white">@CachedMods.Count</strong> mods</span>
-            <span class="text-muted">Total Size: <strong class="text-white">@FormatBytes(TotalCacheSize)</strong></span>
+            <span class="text-muted">Total Cached: <strong class="text-white">@cachedMods.Count</strong> mods</span>
+            <span class="text-muted">Total Size: <strong class="text-white">@FormatBytes(totalCacheSize)</strong></span>
         </div>
 
         <div class="table-responsive">
@@ -53,9 +52,9 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var mod in CachedMods.OrderBy(m => m.Title))
+                    @foreach (LocalModInfo mod in cachedMods.OrderBy(m => m.Title))
                     {
-                        var sizeBytes = GetFileSize(mod.FileName);
+                        long sizeBytes = GetFileSize(mod.FileName);
                         <tr>
                             <td>
                                 <i class="bi bi-puzzle text-accent me-2"></i>
@@ -78,8 +77,8 @@
 </div>
 
 @code {
-    private List<LocalModInfo>? CachedMods;
-    private long TotalCacheSize = 0;
+    private List<LocalModInfo>? cachedMods;
+    private long totalCacheSize;
     
     protected override void OnInitialized()
     {
@@ -88,18 +87,18 @@
     
     private void LoadMods()
     {
-        CachedMods = ModManager.GetGlobalMods();
-        TotalCacheSize = 0;
+        cachedMods = ModManager.GetGlobalMods();
+        totalCacheSize = 0;
         
         string globalPath = ModManager.GetGlobalModsPath();
         if (Directory.Exists(globalPath))
         {
-            foreach (var mod in CachedMods)
+            foreach (LocalModInfo mod in cachedMods)
             {
                 string path = Path.Combine(globalPath, mod.FileName);
                 if (File.Exists(path))
                 {
-                    TotalCacheSize += new FileInfo(path).Length;
+                    totalCacheSize += new FileInfo(path).Length;
                 }
             }
         }
@@ -132,7 +131,7 @@
     
     private async Task DeleteModWithConfirm(string filename)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to delete {filename} from the global cache?");
+        bool confirmed = await Js.InvokeAsync<bool>("confirm", $"Are you sure you want to delete {filename} from the global cache?");
         if (confirmed)
         {
             ModManager.DeleteGlobalMod(filename);
@@ -142,7 +141,7 @@
     
     private async Task ClearUnusedMods()
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", "This will scan all servers and delete any mod in the global cache that is not currently inside a server's mods folder. Are you sure?");
+        bool confirmed = await Js.InvokeAsync<bool>("confirm", "This will scan all servers and delete any mod in the global cache that is not currently inside a server's mods folder. Are you sure?");
         if (confirmed)
         {
             ModManager.ClearUnusedGlobalMods();

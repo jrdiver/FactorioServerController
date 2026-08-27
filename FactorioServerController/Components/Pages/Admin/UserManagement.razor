@@ -3,8 +3,6 @@
 @using FactorioLibrary.Models
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
-@using Microsoft.AspNetCore.Authorization
-@using Microsoft.AspNetCore.Components.Authorization
 @attribute [Authorize(Roles = "Administrator")]
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<IdentityUser> UserManager
@@ -24,10 +22,10 @@
         </div>
     </div>
 
-    @if (!string.IsNullOrEmpty(ErrorMessage))
+    @if (!string.IsNullOrEmpty(errorMessage))
     {
         <div class="alert alert-danger mb-4">
-            <i class="bi bi-exclamation-triangle-fill me-2"></i>@ErrorMessage
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>@errorMessage
         </div>
     }
 
@@ -43,7 +41,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var user in Users)
+                    @foreach (UserInfo user in users)
                     {
                         <tr>
                             <td class="align-middle">@user.User.UserName</td>
@@ -69,7 +67,7 @@
                                         <div class="d-flex flex-wrap gap-1">
                                             @foreach (UserServerAccess access in user.ServerAccesses)
                                             {
-                                                ServerInstance? server = Servers.FirstOrDefault(s => s.Id == access.ServerInstanceId);
+                                                ServerInstance? server = servers.FirstOrDefault(s => s.Id == access.ServerInstanceId);
                                                 if (server != null)
                                                 {
                                                     <span class="badge border border-secondary text-light">
@@ -96,7 +94,7 @@
                                         <i class="bi bi-star-fill me-1"></i> Promote
                                     </button>
 
-                                    if (user.User.Id != CurrentUserId)
+                                    if (user.User.Id != currentUserId)
                                     {
                                         <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteUser(user.User)" title="Delete User">
                                             <i class="bi bi-trash"></i>
@@ -111,7 +109,7 @@
                                 }
                                 else
                                 {
-                                    if (user.User.Id != CurrentUserId)
+                                    if (user.User.Id != currentUserId)
                                     {
                                         <button class="btn btn-sm btn-glass-secondary text-warning" @onclick="() => ToggleAdminRole(user.User, false)">
                                             <i class="bi bi-star me-1"></i> Demote
@@ -133,7 +131,7 @@
     </div>
 </div>
 
-@if (IsCreateUserModalOpen)
+@if (isCreateUserModalOpen)
 {
     <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.7);">
         <div class="modal-dialog modal-dialog-centered">
@@ -145,14 +143,14 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label text-muted">Username</label>
-                        <input type="text" class="form-control bg-dark text-white border-secondary" @bind="NewUsername" />
+                        <input type="text" class="form-control bg-dark text-white border-secondary" @bind="newUsername" />
                     </div>
                     <div class="mb-3">
                         <label class="form-label text-muted">Password</label>
-                        <input type="password" class="form-control bg-dark text-white border-secondary" @bind="NewPassword" />
+                        <input type="password" class="form-control bg-dark text-white border-secondary" @bind="newPassword" />
                     </div>
                     <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" id="newUserIsAdmin" @bind="NewUserIsAdmin" />
+                        <input class="form-check-input" type="checkbox" id="newUserIsAdmin" @bind="newUserIsAdmin" />
                         <label class="form-check-label text-muted" for="newUserIsAdmin">Make this user an Administrator</label>
                     </div>
                 </div>
@@ -165,23 +163,23 @@
     </div>
 }
 
-@if (IsAccessModalOpen && SelectedUser != null)
+@if (isAccessModalOpen && selectedUser != null)
 {
     <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.7);">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content glass-card">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title text-accent"><i class="bi bi-shield-lock-fill me-2"></i>Manage Access for @SelectedUser.UserName</h5>
+                    <h5 class="modal-title text-accent"><i class="bi bi-shield-lock-fill me-2"></i>Manage Access for @selectedUser.UserName</h5>
                     <button type="button" class="btn-close btn-close-white" @onclick="CloseAccessModal"></button>
                 </div>
                 <div class="modal-body">
                     <p class="text-muted mb-3">Select the servers this user is allowed to view and manage.</p>
 
                     <div class="list-group">
-                        @foreach (ServerInstance server in Servers)
+                        @foreach (ServerInstance server in servers)
                         {
-                            SelectedUserAccesses.TryGetValue(server.Id, out ServerAccessLevel currentAccessLevel);
-                            bool hasAccess = SelectedUserAccesses.ContainsKey(server.Id);
+                            selectedUserAccesses.TryGetValue(server.Id, out ServerAccessLevel currentAccessLevel);
+                            bool hasAccess = selectedUserAccesses.ContainsKey(server.Id);
                             string accessStr = hasAccess ? currentAccessLevel.ToString() : "None";
 
                             <div class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between align-items-center">
@@ -209,43 +207,43 @@
 }
 
 @code {
-    private List<UserInfo> Users = new();
-    private List<ServerInstance> Servers = new();
-    private string? ErrorMessage;
+    private List<UserInfo> users = new();
+    private List<ServerInstance> servers = new();
+    private string? errorMessage;
 
     // Create Modal state
-    private bool IsCreateUserModalOpen = false;
-    private string NewUsername = "";
-    private string NewPassword = "";
-    private bool NewUserIsAdmin = false;
+    private bool isCreateUserModalOpen;
+    private string newUsername = "";
+    private string newPassword = "";
+    private bool newUserIsAdmin;
 
     // Access Modal state
-    private bool IsAccessModalOpen = false;
-    private IdentityUser? SelectedUser;
-    private Dictionary<int, ServerAccessLevel> SelectedUserAccesses = new();
-    private string? CurrentUserId;
+    private bool isAccessModalOpen;
+    private IdentityUser? selectedUser;
+    private Dictionary<int, ServerAccessLevel> selectedUserAccesses = new();
+    private string? currentUserId;
 
     protected override async Task OnInitializedAsync()
     {
         AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
         IdentityUser? user = await UserManager.GetUserAsync(authState.User);
-        CurrentUserId = user?.Id;
+        currentUserId = user?.Id;
 
         await LoadData();
     }
 
     private async Task LoadData()
     {
-        Servers = await DbContext.ServerInstances.ToListAsync();
+        servers = await DbContext.ServerInstances.ToListAsync();
         List<IdentityUser> allUsers = await UserManager.Users.ToListAsync();
 
-        Users.Clear();
+        users.Clear();
         foreach (IdentityUser u in allUsers)
         {
             bool isAdmin = await UserManager.IsInRoleAsync(u, "Administrator");
             List<UserServerAccess> accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == u.Id).ToListAsync();
 
-            Users.Add(new UserInfo
+            users.Add(new()
             {
                 User = u,
                 IsAdmin = isAdmin,
@@ -256,83 +254,83 @@
 
     private void ShowCreateUserModal()
     {
-        NewUsername = "";
-        NewPassword = "";
-        NewUserIsAdmin = false;
-        ErrorMessage = null;
-        IsCreateUserModalOpen = true;
+        newUsername = "";
+        newPassword = "";
+        newUserIsAdmin = false;
+        errorMessage = null;
+        isCreateUserModalOpen = true;
     }
 
     private void CloseCreateUserModal()
     {
-        IsCreateUserModalOpen = false;
+        isCreateUserModalOpen = false;
     }
 
     private async Task CreateUser()
     {
-        if (string.IsNullOrWhiteSpace(NewUsername) || string.IsNullOrWhiteSpace(NewPassword))
+        if (string.IsNullOrWhiteSpace(newUsername) || string.IsNullOrWhiteSpace(newPassword))
         {
-            ErrorMessage = "Username and password are required.";
-            IsCreateUserModalOpen = false;
+            errorMessage = "Username and password are required.";
+            isCreateUserModalOpen = false;
             return;
         }
 
-        IdentityUser? user = new IdentityUser { UserName = NewUsername };
-        IdentityResult result = await UserManager.CreateAsync(user, NewPassword);
+        IdentityUser? user = new() { UserName = newUsername };
+        IdentityResult result = await UserManager.CreateAsync(user, newPassword);
 
         if (result.Succeeded)
         {
-            if (NewUserIsAdmin)
+            if (newUserIsAdmin)
                 await UserManager.AddToRoleAsync(user, "Administrator");
             await LoadData();
         }
         else
-            ErrorMessage = result.Errors.FirstOrDefault()?.Description ?? "Failed to create user.";
+            errorMessage = result.Errors.FirstOrDefault()?.Description ?? "Failed to create user.";
 
-        IsCreateUserModalOpen = false;
+        isCreateUserModalOpen = false;
     }
 
     private async Task ShowAccessModal(IdentityUser user)
     {
-        SelectedUser = user;
-        var accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == user.Id).ToListAsync();
-        SelectedUserAccesses = accesses.ToDictionary(a => a.ServerInstanceId, a => a.AccessLevel);
-        IsAccessModalOpen = true;
+        selectedUser = user;
+        List<UserServerAccess> accesses = await DbContext.UserServerAccesses.Where(usa => usa.UserId == user.Id).ToListAsync();
+        selectedUserAccesses = accesses.ToDictionary(a => a.ServerInstanceId, a => a.AccessLevel);
+        isAccessModalOpen = true;
     }
 
     private void CloseAccessModal()
     {
-        IsAccessModalOpen = false;
-        SelectedUser = null;
+        isAccessModalOpen = false;
+        selectedUser = null;
     }
 
     private async Task SetAccessLevel(int serverId, string? levelStr)
     {
-        if (SelectedUser == null || levelStr == null) return;
+        if (selectedUser == null || levelStr == null) return;
 
         UserServerAccess? access = await DbContext.UserServerAccesses
-            .FirstOrDefaultAsync(usa => usa.UserId == SelectedUser.Id && usa.ServerInstanceId == serverId);
+            .FirstOrDefaultAsync(usa => usa.UserId == selectedUser.Id && usa.ServerInstanceId == serverId);
 
         if (levelStr == "None")
         {
             if (access != null)
             {
                 DbContext.UserServerAccesses.Remove(access);
-                SelectedUserAccesses.Remove(serverId);
+                selectedUserAccesses.Remove(serverId);
             }
         }
         else if (Enum.TryParse(levelStr, out ServerAccessLevel newLevel))
         {
             if (access == null)
             {
-                access = new UserServerAccess { UserId = SelectedUser.Id, ServerInstanceId = serverId, AccessLevel = newLevel };
+                access = new() { UserId = selectedUser.Id, ServerInstanceId = serverId, AccessLevel = newLevel };
                 DbContext.UserServerAccesses.Add(access);
             }
             else
             {
                 access.AccessLevel = newLevel;
             }
-            SelectedUserAccesses[serverId] = newLevel;
+            selectedUserAccesses[serverId] = newLevel;
         }
 
         await DbContext.SaveChangesAsync();

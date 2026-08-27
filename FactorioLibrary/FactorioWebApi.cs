@@ -11,12 +11,10 @@ public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsServi
 {
     private const string BaseVersionsUrl = "https://factorio.com/get-available-versions";
 
-    private readonly FactorioCredentials _credentials = credentials;
-    private readonly GlobalSettingsService _settingsService = settingsService;
-    private List<DockerTagInfo>? _cachedTags;
-    private DateTime _lastCacheTime;
+    private List<DockerTagInfo>? cachedTags;
+    private DateTime lastCacheTime;
 
-    private string VersionsUrl => $"{BaseVersionsUrl}?username={Uri.EscapeDataString(_credentials.Username)}&token={Uri.EscapeDataString(_credentials.Token)}";
+    private string VersionsUrl => $"{BaseVersionsUrl}?username={Uri.EscapeDataString(credentials.Username)}&token={Uri.EscapeDataString(credentials.Token)}";
 
     public async Task<FactorioVersions?> GetVersions()
     {
@@ -34,10 +32,10 @@ public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsServi
     {
         try
         {
-            GlobalSettings settings = _settingsService.GetSettings();
+            GlobalSettings settings = settingsService.GetSettings();
 
             // Check cache
-            if (_cachedTags != null && (DateTime.Now - _lastCacheTime).TotalHours < 1)
+            if (cachedTags != null && (DateTime.Now - lastCacheTime).TotalHours < 1)
             {
                 // We will re-filter the cached tags below based on current settings
             }
@@ -104,17 +102,17 @@ public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsServi
                     if ((name == "latest" || name == "stable") && digestToVersionMap.TryGetValue(digest, out string? realVersion))
                         displayName = $"{name} ({realVersion})";
 
-                    tags.Add(new DockerTagInfo(name, displayName));
+                    tags.Add(new(name, displayName));
                 }
 
                 // Sort the base cached tags
-                _cachedTags = [.. tags.DistinctBy(t => t.Tag).OrderBy(t => t.Tag == "latest" ? 0 : t.Tag == "stable" ? 1 : 2).ThenByDescending(t =>
+                cachedTags = [.. tags.DistinctBy(t => t.Tag).OrderBy(t => t.Tag == "latest" ? 0 : t.Tag == "stable" ? 1 : 2).ThenByDescending(t =>
                     {
                         if (Version.TryParse(t.Tag, out Version? v)) return v;
-                        return new Version(0, 0, 0);
+                        return new(0, 0, 0);
                     })];
 
-                _lastCacheTime = DateTime.Now;
+                lastCacheTime = DateTime.Now;
             }
 
             // Now apply filters based on settings
@@ -122,7 +120,7 @@ public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsServi
             HashSet<string> seenMinorVersions = [];
             int semanticCount = 0;
 
-            foreach (DockerTagInfo tagInfo in _cachedTags)
+            foreach (DockerTagInfo tagInfo in cachedTags)
             {
                 string name = tagInfo.Tag;
 

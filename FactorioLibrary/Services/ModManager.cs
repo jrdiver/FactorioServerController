@@ -1,26 +1,22 @@
-using FactorioLibrary.Internal;
-using FactorioLibrary.Models;
-using Microsoft.Extensions.Configuration;
 using System.IO.Compression;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using FactorioLibrary.Internal;
+using FactorioLibrary.Models;
 
 namespace FactorioLibrary.Services;
 
-public class ModManager(IConfiguration config, GlobalSettingsService settingsService, HttpClient? httpClient = null)
+public class ModManager(GlobalSettingsService settingsService, InstanceManager instanceManager, HttpClient? httpClient = null)
 {
     private const string ModPortalApiBase = "https://mods.factorio.com/api/mods";
-    private readonly HttpClient _httpClient = httpClient ?? Shared.HttpClient;
-    private readonly GlobalSettingsService _settingsService = settingsService;
-    private readonly string _hostBaseMountPath = string.IsNullOrEmpty(config.GetValue<string>("HOST_BASE_MOUNT_PATH")) ? (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "C:\\FactorioServers" : "/mnt/user/appdata/factorio_manager/servers") : config.GetValue<string>("HOST_BASE_MOUNT_PATH")!;
+    private readonly HttpClient httpClient = httpClient ?? Shared.HttpClient;
 
-    private readonly SemaphoreSlim _cacheLock = new(1, 1);
-    private Dictionary<string, ModCacheEntry>? _modCache;
+    private readonly SemaphoreSlim cacheLock = new(1, 1);
+    private Dictionary<string, ModCacheEntry>? modCache;
 
     private async Task LoadCacheAsync()
     {
-        if (_modCache != null) return;
+        if (modCache != null) return;
 
         string cachePath = Path.Combine(GetGlobalModsPath(), "mod-cache.json");
         if (File.Exists(cachePath))
@@ -28,24 +24,24 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
             try
             {
                 string json = await File.ReadAllTextAsync(cachePath);
-                _modCache = JsonSerializer.Deserialize<Dictionary<string, ModCacheEntry>>(json) ?? [];
+                modCache = JsonSerializer.Deserialize<Dictionary<string, ModCacheEntry>>(json) ?? [];
             }
-            catch { _modCache = []; }
+            catch { modCache = []; }
         }
         else
         {
-            _modCache = [];
+            modCache = [];
         }
     }
 
     private async Task SaveCacheAsync()
     {
-        if (_modCache == null) return;
+        if (modCache == null) return;
         string cachePath = Path.Combine(GetGlobalModsPath(), "mod-cache.json");
         try
         {
-            var options = new JsonSerializerOptions { WriteIndented = true };
-            string json = JsonSerializer.Serialize(_modCache, options);
+            JsonSerializerOptions options = new JsonSerializerOptions { WriteIndented = true };
+            string json = JsonSerializer.Serialize(modCache, options);
             await File.WriteAllTextAsync(cachePath, json);
         }
         catch { }
@@ -53,12 +49,12 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
 
     public async Task<ModInfo?> GetCachedModInfoAsync(string modName, bool forceRefresh = false)
     {
-        await _cacheLock.WaitAsync();
+        await cacheLock.WaitAsync();
         try
         {
             await LoadCacheAsync();
 
-            if (!forceRefresh && _modCache!.TryGetValue(modName, out var entry))
+            if (!forceRefresh && modCache!.TryGetValue(modName, out ModCacheEntry? entry))
             {
                 if (DateTime.UtcNow - entry.LastChecked < TimeSpan.FromHours(24))
                 {
@@ -66,16 +62,16 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
                 }
             }
 
-            HttpResponseMessage response = await _httpClient.GetAsync($"{ModPortalApiBase}/{Uri.EscapeDataString(modName)}");
+            HttpResponseMessage response = await httpClient.GetAsync($"{ModPortalApiBase}/{Uri.EscapeDataString(modName)}");
             ModInfo? info = null;
             if (response.IsSuccessStatusCode)
             {
                 string json = await response.Content.ReadAsStringAsync();
-                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                JsonSerializerOptions options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 info = JsonSerializer.Deserialize<ModInfo>(json, options);
             }
 
-            _modCache![modName] = new ModCacheEntry
+            modCache![modName] = new()
             {
                 LastChecked = DateTime.UtcNow,
                 Info = info
@@ -86,33 +82,18 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
         }
         finally
         {
-            _cacheLock.Release();
+            cacheLock.Release();
         }
     }
 
     private string GetInstanceModsPath(int instanceId)
     {
-        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true"
-            ? $"/factorio/{instanceId}"
-            : $"{_hostBaseMountPath.TrimEnd('/', '\\')}/{instanceId}";
-        return Path.Combine(localDataPath, "mods");
+        return instanceManager.GetModsDirectory(instanceId);
     }
 
     public string GetGlobalModsPath()
     {
-        bool inContainer = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
-        string globalPath;
-        if (inContainer)
-        {
-            globalPath = "/data/global_mods";
-        }
-        else
-        {
-            var parent = Directory.GetParent(_hostBaseMountPath.TrimEnd('/', '\\'))?.FullName ?? _hostBaseMountPath;
-            globalPath = Path.Combine(parent, "global_mods");
-        }
-        if (!Directory.Exists(globalPath)) Directory.CreateDirectory(globalPath);
-        return globalPath;
+        return instanceManager.GetGlobalModsDirectory();
     }
 
     public async Task<List<LocalModInfo>> GetLocalModsAsync(int instanceId)
@@ -149,11 +130,11 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
         {
             try
             {
-                using ZipArchive archive = ZipFile.OpenRead(zipPath);
+                await using ZipArchive archive = ZipFile.OpenRead(zipPath);
                 ZipArchiveEntry? infoEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("info.json", StringComparison.OrdinalIgnoreCase));
                 if (infoEntry != null)
                 {
-                    using Stream stream = infoEntry.Open();
+                    await using Stream stream = infoEntry.Open();
                     using StreamReader reader = new(stream);
                     string json = reader.ReadToEnd();
                     using JsonDocument doc = JsonDocument.Parse(json);
@@ -164,7 +145,7 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
 
                     if (name != null)
                     {
-                        localMods.Add(new LocalModInfo
+                        localMods.Add(new()
                         {
                             Name = name,
                             Title = title ?? name,
@@ -206,14 +187,14 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
 
             if (!copiedLocally)
             {
-                GlobalSettings settings = _settingsService.GetSettings();
-                
+                GlobalSettings settings = settingsService.GetSettings();
+
                 // Fallback: If we don't have the EXACT latest version in the cache, but we DO have an older version
                 // of this mod in the cache, and we CANNOT download from the portal because of missing credentials,
                 // we should fallback to the best available version in the cache.
                 if (string.IsNullOrEmpty(settings.FactorioUsername) || string.IsNullOrEmpty(settings.FactorioToken))
                 {
-                    var cachedMods = Directory.GetFiles(globalModsDir, $"{modName}_*.zip");
+                    string[] cachedMods = Directory.GetFiles(globalModsDir, $"{modName}_*.zip");
                     if (cachedMods.Any())
                     {
                         string fallbackModPath = cachedMods.OrderByDescending(x => x).First();
@@ -227,18 +208,18 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
                         catch { }
                     }
                 }
-                
+
                 if (!copiedLocally)
                 {
                     if (string.IsNullOrEmpty(settings.FactorioUsername) || string.IsNullOrEmpty(settings.FactorioToken))
                         return (false, "Factorio Mod Portal credentials are not configured in Settings.");
 
                     string finalUrl = $"https://mods.factorio.com{downloadUrl}?username={Uri.EscapeDataString(settings.FactorioUsername.Trim())}&token={Uri.EscapeDataString(settings.FactorioToken.Trim())}";
-                    using HttpResponseMessage response = await _httpClient.GetAsync(finalUrl, HttpCompletionOption.ResponseHeadersRead);
+                    using HttpResponseMessage response = await httpClient.GetAsync(finalUrl, HttpCompletionOption.ResponseHeadersRead);
                     if (!response.IsSuccessStatusCode)
                         return (false, $"Mod Portal returned {response.StatusCode} when attempting to download.");
 
-                    using FileStream fs = new(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None);
+                    await using FileStream fs = new(targetFilePath, FileMode.Create, FileAccess.Write, FileShare.None);
                     await response.Content.CopyToAsync(fs);
                     fs.Close();
 
@@ -246,6 +227,7 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
                     try
                     {
                         File.Copy(targetFilePath, globalModPath, true);
+                        cachedGlobalMods = null;
                     }
                     catch { }
                 }
@@ -275,51 +257,75 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
             string fileName = Path.GetFileName(filePath);
             string globalPath = Path.Combine(GetGlobalModsPath(), fileName);
             File.Copy(filePath, globalPath, true);
+            cachedGlobalMods = null;
         }
         catch { }
     }
+
+    private List<LocalModInfo>? cachedGlobalMods;
+    private DateTime lastGlobalModsDirWriteTime = DateTime.MinValue;
+    private readonly SemaphoreSlim globalModsLock = new(1, 1);
 
     public List<LocalModInfo> GetGlobalMods()
     {
         string modsDir = GetGlobalModsPath();
         if (!Directory.Exists(modsDir)) return [];
 
-        List<LocalModInfo> globalMods = [];
-        string[] zipFiles = Directory.GetFiles(modsDir, "*.zip");
-
-        foreach (string zipPath in zipFiles)
+        globalModsLock.Wait();
+        try
         {
-            try
+            DateTime currentWriteTime = Directory.GetLastWriteTimeUtc(modsDir);
+
+            // Also check file count just to be slightly more robust, though GetLastWriteTimeUtc usually covers it
+            string[] zipFiles = Directory.GetFiles(modsDir, "*.zip");
+
+            if (cachedGlobalMods != null && currentWriteTime == lastGlobalModsDirWriteTime && cachedGlobalMods.Count == zipFiles.Length)
             {
-                using ZipArchive archive = ZipFile.OpenRead(zipPath);
-                ZipArchiveEntry? infoEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("info.json", StringComparison.OrdinalIgnoreCase));
-                if (infoEntry != null)
+                return cachedGlobalMods.ToList(); // Return a copy
+            }
+
+            List<LocalModInfo> globalMods = [];
+
+            foreach (string zipPath in zipFiles)
+            {
+                try
                 {
-                    using Stream stream = infoEntry.Open();
-                    using StreamReader reader = new(stream);
-                    string json = reader.ReadToEnd();
-                    using JsonDocument doc = JsonDocument.Parse(json);
-
-                    string? name = doc.RootElement.GetProperty("name").GetString();
-                    string? version = doc.RootElement.GetProperty("version").GetString();
-                    string? title = doc.RootElement.TryGetProperty("title", out JsonElement titleProp) ? titleProp.GetString() : name;
-
-                    if (name != null)
+                    using ZipArchive archive = ZipFile.OpenRead(zipPath);
+                    ZipArchiveEntry? infoEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("info.json", StringComparison.OrdinalIgnoreCase));
+                    if (infoEntry != null)
                     {
-                        globalMods.Add(new LocalModInfo
+                        using Stream stream = infoEntry.Open();
+                        using StreamReader reader = new(stream);
+                        string json = reader.ReadToEnd();
+                        using JsonDocument doc = JsonDocument.Parse(json);
+
+                        string? name = doc.RootElement.GetProperty("name").GetString();
+                        string? version = doc.RootElement.GetProperty("version").GetString();
+                        string? title = doc.RootElement.TryGetProperty("title", out JsonElement titleProp) ? titleProp.GetString() : name;
+
+                        if (name != null)
                         {
-                            Name = name,
-                            Title = title ?? name,
-                            Version = version ?? "0.0.0",
-                            FileName = Path.GetFileName(zipPath),
-                            IsEnabled = false
-                        });
+                            globalMods.Add(new()
+                            {
+                                Name = name,
+                                Title = title ?? name,
+                                Version = version ?? "0.0.0",
+                                FileName = Path.GetFileName(zipPath),
+                                IsEnabled = false
+                            });
+                        }
                     }
                 }
+                catch { }
             }
-            catch { }
+            cachedGlobalMods = globalMods.ToList();
+            lastGlobalModsDirWriteTime = currentWriteTime;
+            return globalMods;
         }
-        return globalMods;
+        finally
+        {
+            globalModsLock.Release();
+        }
     }
 
     public void DeleteGlobalMod(string fileName)
@@ -330,6 +336,7 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
             if (File.Exists(globalPath))
             {
                 File.Delete(globalPath);
+                cachedGlobalMods = null;
             }
         }
         catch { }
@@ -339,20 +346,18 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
     {
         try
         {
-            string allInstancesDir = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true"
-                ? "/factorio"
-                : _hostBaseMountPath.TrimEnd('/', '\\');
+            string allInstancesDir = instanceManager.GetAllInstancesDirectory();
 
             HashSet<string> usedFileNames = [];
             if (Directory.Exists(allInstancesDir))
             {
-                var otherInstanceModDirs = Directory.GetDirectories(allInstancesDir, "*", SearchOption.TopDirectoryOnly)
+                IEnumerable<string> otherInstanceModDirs = Directory.GetDirectories(allInstancesDir, "*", SearchOption.TopDirectoryOnly)
                     .Select(d => Path.Combine(d, "mods"))
                     .Where(Directory.Exists);
 
-                foreach (var modDir in otherInstanceModDirs)
+                foreach (string modDir in otherInstanceModDirs)
                 {
-                    foreach (var file in Directory.GetFiles(modDir, "*.zip"))
+                    foreach (string file in Directory.GetFiles(modDir, "*.zip"))
                     {
                         usedFileNames.Add(Path.GetFileName(file));
                     }
@@ -360,13 +365,14 @@ public class ModManager(IConfiguration config, GlobalSettingsService settingsSer
             }
 
             string globalModsDir = GetGlobalModsPath();
-            foreach (var file in Directory.GetFiles(globalModsDir, "*.zip"))
+            foreach (string file in Directory.GetFiles(globalModsDir, "*.zip"))
             {
                 if (!usedFileNames.Contains(Path.GetFileName(file)))
                 {
                     File.Delete(file);
                 }
             }
+            cachedGlobalMods = null;
         }
         catch { }
     }

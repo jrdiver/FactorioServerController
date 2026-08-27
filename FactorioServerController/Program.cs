@@ -1,15 +1,16 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.DataProtection;
-using FactorioLibrary;
-using FactorioLibrary.Data;
-using FactorioLibrary.Services;
-using FactorioServerController.Components;
-using FactorioServerController.Components.Endpoints;
-using FactorioServerController.Auth;
-using Microsoft.AspNetCore.HttpOverrides;
 using System.Runtime.InteropServices;
 using System.Security.Claims;
+using FactorioLibrary;
+using FactorioLibrary.Data;
+using FactorioLibrary.Models;
+using FactorioLibrary.Services;
+using FactorioServerController.Auth;
+using FactorioServerController.Components;
+using FactorioServerController.Components.Endpoints;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -27,7 +28,7 @@ builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connStr
 string dataProtectionPath = builder.Configuration["DataProtection:KeyPath"];
 if (string.IsNullOrWhiteSpace(dataProtectionPath)) dataProtectionPath = Path.Combine(dataDir, "keys");
 
-builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath)).SetApplicationName("FactorioServerController");
+builder.Services.AddDataProtection().PersistKeysToFileSystem(new(dataProtectionPath)).SetApplicationName("FactorioServerController");
 
 builder.Services.AddAuthentication(options =>
     {
@@ -60,8 +61,8 @@ builder.Services.AddIdentityCore<IdentityUser>(options =>
 // Register Factorio Core Services
 string settingsPath = builder.Configuration["GlobalSettings:Path"];
 if (string.IsNullOrWhiteSpace(settingsPath)) settingsPath = Path.Combine(dataDir, "settings.json");
-builder.Services.AddSingleton<GlobalSettingsService>(sp => new GlobalSettingsService(settingsPath));
-builder.Services.AddSingleton<FactorioWebApi>(sp => new FactorioWebApi(new FactorioLibrary.Objects.FactorioCredentials(), sp.GetRequiredService<GlobalSettingsService>()));
+builder.Services.AddSingleton<GlobalSettingsService>(sp => new(settingsPath));
+builder.Services.AddSingleton<FactorioWebApi>(sp => new(new(), sp.GetRequiredService<GlobalSettingsService>()));
 builder.Services.AddSingleton<VersionManager>();
 builder.Services.AddSingleton<ModManager>();
 builder.Services.AddSingleton<InstanceManager>();
@@ -82,7 +83,7 @@ using (IServiceScope scope = app.Services.CreateScope())
     UserManager<IdentityUser> userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
 
     if (!roleManager.RoleExistsAsync("Administrator").GetAwaiter().GetResult())
-        roleManager.CreateAsync(new IdentityRole("Administrator")).GetAwaiter().GetResult();
+        roleManager.CreateAsync(new("Administrator")).GetAwaiter().GetResult();
 
     IList<IdentityUser> admins = userManager.GetUsersInRoleAsync("Administrator").GetAwaiter().GetResult();
     if (admins.Count == 0)
@@ -94,7 +95,7 @@ using (IServiceScope scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
-app.UseForwardedHeaders(new ForwardedHeadersOptions
+app.UseForwardedHeaders(new()
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 });
@@ -170,11 +171,11 @@ app.MapGet("/api/instances/{id:int}/mods/downloadAll", async (int id, InstanceMa
 // Minimal API endpoint for listing all instances
 app.MapGet("/api/instances", async (AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
-    var identityUser = await userManager.GetUserAsync(user);
+    IdentityUser? identityUser = await userManager.GetUserAsync(user);
     if (identityUser == null) return Results.Unauthorized();
     bool isGlobalAdmin = await userManager.IsInRoleAsync(identityUser, "Administrator");
 
-    var query = db.ServerInstances.AsQueryable();
+    IQueryable<ServerInstance> query = db.ServerInstances.AsQueryable();
     List<FactorioLibrary.Models.UserServerAccess>? accessList = null;
 
     if (!isGlobalAdmin)
@@ -183,11 +184,11 @@ app.MapGet("/api/instances", async (AppDbContext db, InstanceManager manager, Us
             .Where(usa => usa.UserId == identityUser.Id)
             .ToListAsync();
 
-        var accessibleIds = accessList.Select(usa => usa.ServerInstanceId).ToList();
+        List<int> accessibleIds = accessList.Select(usa => usa.ServerInstanceId).ToList();
         query = query.Where(si => accessibleIds.Contains(si.Id));
     }
 
-    var instancesList = await query.ToListAsync();
+    List<ServerInstance> instancesList = await query.ToListAsync();
 
     var instances = instancesList.Select(x => new
     {
@@ -207,12 +208,12 @@ app.MapGet("/api/instances/{id:int}/saves", async (int id, AppDbContext db, Inst
 {
     if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
 
-    var instance = await db.ServerInstances.FindAsync(id);
+    ServerInstance? instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
 
     string savesDir = manager.GetSavesDirectory(id);
     if (!Directory.Exists(savesDir)) Directory.CreateDirectory(savesDir);
-    var saves = Directory.GetFiles(savesDir, "*.zip").Select(Path.GetFileName);
+    IEnumerable<string?> saves = Directory.GetFiles(savesDir, "*.zip").Select(Path.GetFileName);
 
     var result = saves.Select(s => new
     {
@@ -227,10 +228,10 @@ app.MapPost("/api/instances/{id:int}/start", async (int id, AppDbContext db, Ins
 {
     if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, true)) return Results.Forbid();
 
-    var instance = await db.ServerInstances.FindAsync(id);
+    ServerInstance? instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
 
-    var result = await manager.StartInstanceAsync(instance);
+    (bool Success, bool CleanedCorruptSave) result = await manager.StartInstanceAsync(instance);
     return result.Success ? Results.Ok("Started") : Results.BadRequest("Failed to start instance or already running.");
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
@@ -239,7 +240,7 @@ app.MapPost("/api/instances/{id:int}/stop", async (int id, AppDbContext db, Inst
 {
     if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, true)) return Results.Forbid();
 
-    var instance = await db.ServerInstances.FindAsync(id);
+    ServerInstance? instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
 
     await manager.StopInstanceAsync(id);
@@ -251,7 +252,7 @@ app.MapPut("/api/instances/{id:int}/saves/active", async (int id, string saveNam
 {
     if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, true)) return Results.Forbid();
 
-    var instance = await db.ServerInstances.FindAsync(id);
+    ServerInstance? instance = await db.ServerInstances.FindAsync(id);
     if (instance == null) return Results.NotFound();
 
     instance.ActiveSaveName = saveName;
@@ -265,13 +266,13 @@ public static class ApiAuthHelper
 {
     public static async Task<bool> HasAccessAsync(AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user, int instanceId, bool requireAdmin)
     {
-        var identityUser = await userManager.GetUserAsync(user);
+        IdentityUser? identityUser = await userManager.GetUserAsync(user);
         if (identityUser == null) return false;
 
         bool isGlobalAdmin = await userManager.IsInRoleAsync(identityUser, "Administrator");
         if (isGlobalAdmin) return true;
 
-        var access = await db.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == identityUser.Id && usa.ServerInstanceId == instanceId);
+        UserServerAccess? access = await db.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == identityUser.Id && usa.ServerInstanceId == instanceId);
         if (access == null) return false;
 
         if (requireAdmin && access.AccessLevel != FactorioLibrary.Models.ServerAccessLevel.Admin)

@@ -1,14 +1,14 @@
-using FactorioLibrary.Services;
-using FactorioLibrary.Objects;
-using FactorioLibrary;
 using System.Net;
+using FactorioLibrary;
+using FactorioLibrary.Objects;
+using FactorioLibrary.Services;
 
 namespace FactorioServerTest;
 
 public class MockHttpMessageHandler : HttpMessageHandler
 {
     public HttpRequestMessage? LastRequest { get; private set; }
-    public HttpResponseMessage ResponseToReturn { get; set; } = new HttpResponseMessage(HttpStatusCode.OK);
+    public HttpResponseMessage ResponseToReturn { get; set; } = new(HttpStatusCode.OK);
     
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -20,20 +20,20 @@ public class MockHttpMessageHandler : HttpMessageHandler
 [TestClass]
 public class VersionManagerTests
 {
-    private string _tempDir = "";
+    private string tempDir = "";
 
     [TestInitialize]
     public void Setup()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
     }
 
     [TestCleanup]
     public void Cleanup()
     {
-        if (Directory.Exists(_tempDir))
+        if (Directory.Exists(tempDir))
         {
-            Directory.Delete(_tempDir, true);
+            Directory.Delete(tempDir, true);
         }
     }
 
@@ -48,11 +48,11 @@ public class VersionManagerTests
         GlobalSettingsService settingsService = new("test_settings.json");
         FactorioCredentials credentials = new() { Username = "user", Token = "token" };
         FactorioWebApi webApi = new(credentials, settingsService);
-        VersionManager manager = new(webApi, _tempDir, httpClient);
+        VersionManager manager = new(webApi, tempDir, httpClient);
 
         FactorioRelease release = new()
         { 
-            Version = new Version(1, 1, 107), 
+            Version = new(1, 1, 107), 
             Platform = "core-linux_headless64",
             Os = PlatformOs.Linux
         };

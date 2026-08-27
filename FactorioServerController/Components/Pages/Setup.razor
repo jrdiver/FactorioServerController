@@ -20,7 +20,7 @@
             </div>
         }
 
-        @if (!NeedsSetup)
+        @if (!needsSetup)
         {
             <div class="alert alert-info">
                 Setup has already been completed.
@@ -60,13 +60,13 @@
     [SupplyParameterFromQuery(Name = "error")]
     public string? ErrorMessage { get; set; }
 
-    private bool NeedsSetup = true;
+    private bool needsSetup = true;
 
     protected override void OnInitialized()
     {
         if (UserManager.Users.Any())
         {
-            NeedsSetup = false;
+            needsSetup = false;
         }
     }
 }

@@ -2,12 +2,12 @@
 
 internal static class Shared
 {
-    private static readonly Lazy<HttpClient> httpClient = new(() =>
+    private static readonly Lazy<HttpClient> LazyHttpClient = new(() =>
     {
         HttpClient client = new();
-        client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36");
+        client.DefaultRequestHeaders.Add("User-Agent", "Jrdiver's Factorio Server Controller");
         return client;
     });
 
-    internal static HttpClient HttpClient => httpClient.Value;
+    internal static HttpClient HttpClient => LazyHttpClient.Value;
 }

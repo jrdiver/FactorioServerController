@@ -1,38 +1,38 @@
 {
-  "$schema": "https://json.schemastore.org/launchsettings.json",
-  "profiles": {
-    "http": {
-      "commandName": "Project",
-      "dotnetRunMessages": true,
-      "launchBrowser": true,
-      "applicationUrl": "http://localhost:5056",
-      "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "HOST_DATA_PATH": "C:\\Factorio"
-      }
-    },
-    "https": {
-      "commandName": "Project",
-      "dotnetRunMessages": true,
-      "launchBrowser": true,
-      "applicationUrl": "https://localhost:7179;http://localhost:5056",
-      "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "HOST_DATA_PATH": "C:\\Factorio"
-      }
-    },
-    "Docker": {
-      "commandName": "Docker",
-      "launchBrowser": true,
-      "launchUrl": "{Scheme}://{ServiceHost}:{ServicePort}",
-      "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "HOST_DATA_PATH": "C:\\Factorio"
-      },
-      "httpPort": 5056,
-      "httpsPort": 7179,
-      "useSSL": true,
-      "DockerfileRunArguments": "-v \"C:\\Factorio:/data\" -v \"//var/run/docker.sock:/var/run/docker.sock\""
+    "$schema": "https://json.schemastore.org/launchsettings.json",
+    "profiles": {
+        "http": {
+            "commandName": "Project",
+            "dotnetRunMessages": true,
+            "launchBrowser": true,
+            "applicationUrl": "http://localhost:5056",
+            "environmentVariables": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "HOST_DATA_PATH": "C:\\Factorio"
+            }
+        },
+        "https": {
+            "commandName": "Project",
+            "dotnetRunMessages": true,
+            "launchBrowser": true,
+            "applicationUrl": "https://localhost:7179;http://localhost:5056",
+            "environmentVariables": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "HOST_DATA_PATH": "C:\\Factorio"
+            }
+        },
+        "Docker": {
+            "commandName": "Docker",
+            "launchBrowser": true,
+            "launchUrl": "{Scheme}://{ServiceHost}:{ServicePort}",
+            "environmentVariables": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "HOST_DATA_PATH": "C:\\Factorio"
+            },
+            "httpPort": 5056,
+            "httpsPort": 7179,
+            "useSSL": true,
+            "DockerfileRunArguments": "-v \"C:\\Factorio:/data\" -v \"//var/run/docker.sock:/var/run/docker.sock\""
+        }
     }
-  }
 }

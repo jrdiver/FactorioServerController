@@ -1,10 +1,11 @@
 @page "/settings"
+@using System.Security.Claims
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
-@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.Primitives
 @inject GlobalSettingsService SettingsService
 @inject AppDbContext DbContext
 @inject AuthenticationStateProvider AuthStateProvider
@@ -29,7 +30,7 @@
                         <h4 class="mb-4"><i class="bi bi-gear-fill me-2"></i>Docker Tags Configuration</h4>
                         
                         <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" id="showAllVersions" @bind="AppSettings.ShowAllVersions" />
+                            <input class="form-check-input" type="checkbox" id="showAllVersions" @bind="appSettings.ShowAllVersions" />
                             <label class="form-check-label text-white" for="showAllVersions">
                                 <strong>Show all patch versions</strong>
                                 <div class="text-muted small">By default, the dropdown only shows the latest 10 patches and the top of each minor line (e.g. 1.1.x, 1.0.x) to reduce clutter. Enable this to show every single patch ever released.</div>
@@ -37,7 +38,7 @@
                         </div>
 
                         <div class="form-check form-switch mb-4">
-                            <input class="form-check-input" type="checkbox" id="showLegacyVersions" @bind="AppSettings.ShowLegacyVersions" />
+                            <input class="form-check-input" type="checkbox" id="showLegacyVersions" @bind="appSettings.ShowLegacyVersions" />
                             <label class="form-check-label text-white" for="showLegacyVersions">
                                 <strong>Show legacy versions (pre-1.0)</strong>
                                 <div class="text-muted small">Enable this to allow selecting Factorio versions released before 1.0 (e.g., 0.18, 0.17). This requires fetching additional history from Docker Hub.</div>
@@ -47,7 +48,7 @@
                         <h5 class="mt-4 mb-3 text-accent border-bottom border-secondary pb-2"><i class="bi bi-clock-history me-2"></i>Server Management</h5>
                         <div class="mb-4">
                             <label class="form-label text-muted">Graceful Shutdown Timeout (Seconds)</label>
-                            <input type="number" class="form-control bg-dark text-white border-secondary" @bind="AppSettings.ShutdownTimeoutSeconds" min="10" max="600" />
+                            <input type="number" class="form-control bg-dark text-white border-secondary" @bind="appSettings.ShutdownTimeoutSeconds" min="10" max="600" />
                             <div class="text-muted small mt-1">Maximum time to wait for a Factorio server to safely save its world and close before forcing it to stop. Highly modded servers may need more time. Default is 60.</div>
                         </div>
 
@@ -57,15 +58,15 @@
                         </p>
                         <div class="mb-3">
                             <label class="form-label text-muted">Factorio Username</label>
-                            <input type="text" class="form-control bg-dark text-white border-secondary" @bind="AppSettings.FactorioUsername" />
+                            <input type="text" class="form-control bg-dark text-white border-secondary" @bind="appSettings.FactorioUsername" />
                         </div>
                         <div class="mb-4">
                             <label class="form-label text-muted">Factorio Token</label>
-                            <input type="password" class="form-control bg-dark text-white border-secondary" @bind="AppSettings.FactorioToken" />
+                            <input type="password" class="form-control bg-dark text-white border-secondary" @bind="appSettings.FactorioToken" />
                         </div>
 
                         <div class="d-flex justify-content-between align-items-center mt-4">
-                            @if (ShowSaveSuccess)
+                            @if (showSaveSuccess)
                             {
                                 <span class="text-success"><i class="bi bi-check-circle-fill me-2"></i>Settings saved successfully!</span>
                             }
@@ -80,14 +81,14 @@
             </Authorized>
         </AuthorizeView>
         
-        <div class="@(IsAdmin ? "col-lg-4" : "col-md-10 col-lg-8 col-xl-6")">
+        <div class="@(isAdmin ? "col-lg-4" : "col-md-10 col-lg-8 col-xl-6")">
             <div class="glass-card mb-4 border border-primary border-opacity-50">
                 <h4 class="mb-4 text-primary"><i class="bi bi-key-fill me-2"></i>API Access</h4>
                 <p class="text-muted small mb-3">
                     Use this API Key to download server saves via direct scripts (e.g., curl or wget) by appending <code>?apikey=...</code> to the download URL.
                 </p>
                 
-                @if (string.IsNullOrEmpty(UserApiKey))
+                @if (string.IsNullOrEmpty(userApiKey))
                 {
                     <div class="spinner-border spinner-border-sm text-primary"></div>
                 }
@@ -96,7 +97,7 @@
                     <div class="mb-3">
                         <label class="form-label text-muted">Your API Key</label>
                         <div class="input-group">
-                            <input type="text" class="form-control bg-dark text-primary font-monospace border-secondary" readonly value="@UserApiKey" id="apiKeyInput" />
+                            <input type="text" class="form-control bg-dark text-primary font-monospace border-secondary" readonly value="@userApiKey" id="apiKeyInput" />
                             <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('apiKeyInput').value)" title="Copy to clipboard">
                                 <i class="bi bi-clipboard"></i>
                             </button>
@@ -106,7 +107,7 @@
                     <button class="btn btn-outline-danger w-100" @onclick="RegenerateApiKey">
                         <i class="bi bi-arrow-repeat me-2"></i>Regenerate Key
                     </button>
-                    @if (ShowKeySuccess)
+                    @if (showKeySuccess)
                     {
                         <div class="text-success text-center mt-2 small"><i class="bi bi-check-circle-fill me-2"></i>Key regenerated!</div>
                     }
@@ -118,18 +119,18 @@
                 
                 @if (Navigation.Uri.Contains("error="))
                 {
-                    Uri uri = new Uri(Navigation.Uri);
+                    Uri uri = new(Navigation.Uri);
                     Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
-                    if (query.TryGetValue("error", out var err))
+                    if (query.TryGetValue("error", out StringValues err))
                     {
                         <div class="alert alert-danger">@err</div>
                     }
                 }
                 @if (Navigation.Uri.Contains("msg="))
                 {
-                    Uri uri = new Uri(Navigation.Uri);
+                    Uri uri = new(Navigation.Uri);
                     Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
-                    if (query.TryGetValue("msg", out var msg))
+                    if (query.TryGetValue("msg", out StringValues msg))
                     {
                         <div class="alert alert-success">@msg</div>
                     }
@@ -159,25 +160,25 @@
 </div>
 
 @code {
-    private GlobalSettings AppSettings = new();
-    private bool ShowSaveSuccess = false;
-    private bool ShowKeySuccess = false;
-    private string? UserApiKey;
-    private bool IsAdmin = false;
-    private IdentityUser? CurrentUser;
+    private GlobalSettings appSettings = new();
+    private bool showSaveSuccess;
+    private bool showKeySuccess;
+    private string? userApiKey;
+    private bool isAdmin;
+    private IdentityUser? currentUser;
 
     protected override async Task OnInitializedAsync()
     {
-        AppSettings = SettingsService.GetSettings();
+        appSettings = SettingsService.GetSettings();
         
         AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = authState.User;
-        IsAdmin = user.IsInRole("Administrator");
+        ClaimsPrincipal user = authState.User;
+        isAdmin = user.IsInRole("Administrator");
         
         if (user.Identity?.IsAuthenticated == true)
         {
-            CurrentUser = await UserManager.GetUserAsync(user);
-            if (CurrentUser != null)
+            currentUser = await UserManager.GetUserAsync(user);
+            if (currentUser != null)
             {
                 await LoadApiKey();
             }
@@ -186,57 +187,57 @@
 
     private async Task LoadApiKey()
     {
-        if (CurrentUser == null) return;
+        if (currentUser == null) return;
         
-        UserApiKey? keyRecord = await DbContext.UserApiKeys.FirstOrDefaultAsync(k => k.UserId == CurrentUser.Id);
+        UserApiKey? keyRecord = await DbContext.UserApiKeys.FirstOrDefaultAsync(k => k.UserId == currentUser.Id);
         if (keyRecord != null)
         {
-            UserApiKey = keyRecord.ApiKey;
+            userApiKey = keyRecord.ApiKey;
         }
         else
         {
             // Auto-generate if missing for some reason
-            UserApiKey newKey = new UserApiKey
+            UserApiKey newKey = new()
             {
-                UserId = CurrentUser.Id,
+                UserId = currentUser.Id,
                 ApiKey = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N")
             };
             DbContext.UserApiKeys.Add(newKey);
             await DbContext.SaveChangesAsync();
-            UserApiKey = newKey.ApiKey;
+            userApiKey = newKey.ApiKey;
         }
     }
 
     private async Task RegenerateApiKey()
     {
-        if (CurrentUser == null) return;
+        if (currentUser == null) return;
         
-        UserApiKey? keyRecord = await DbContext.UserApiKeys.FirstOrDefaultAsync(k => k.UserId == CurrentUser.Id);
+        UserApiKey? keyRecord = await DbContext.UserApiKeys.FirstOrDefaultAsync(k => k.UserId == currentUser.Id);
         if (keyRecord != null)
         {
             keyRecord.ApiKey = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
             await DbContext.SaveChangesAsync();
-            UserApiKey = keyRecord.ApiKey;
+            userApiKey = keyRecord.ApiKey;
             
-            ShowKeySuccess = true;
+            showKeySuccess = true;
             StateHasChanged();
             
             await Task.Delay(3000);
-            ShowKeySuccess = false;
+            showKeySuccess = false;
             StateHasChanged();
         }
     }
 
     private async Task SaveSettings()
     {
-        await SettingsService.SaveSettingsAsync(AppSettings);
+        await SettingsService.SaveSettingsAsync(appSettings);
         
-        ShowSaveSuccess = true;
+        showSaveSuccess = true;
         StateHasChanged();
         
         // Hide success message after 3 seconds
         await Task.Delay(3000);
-        ShowSaveSuccess = false;
+        showSaveSuccess = false;
         StateHasChanged();
     }
 }

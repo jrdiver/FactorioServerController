@@ -1,15 +1,14 @@
 @page "/status"
+@using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
-@using FactorioLibrary.Data
-@using Microsoft.EntityFrameworkCore
-@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
 @inject InstanceManager InstanceManager
 @inject AppDbContext DbContext
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<IdentityUser> UserManager
-@inject IJSRuntime JSRuntime
+@inject IJSRuntime JsRuntime
 @implements IDisposable
 
 <PageTitle>Fleet Status</PageTitle>
@@ -17,12 +16,12 @@
 <div class="container-fluid py-4">
     <div class="row mb-4 align-items-center">
         <div class="col">
-            <h1 class="display-5 text-accent mb-0"><i class="bi bi-activity me-2"></i>Fleet Status</h1>
-            <p class="text-muted mt-2">Aggregated resource usage across all your running servers</p>
+            <h1 class="display-5 text-accent mb-0"><i class="bi bi-activity me-2"></i>Server Stats</h1>
+            <p class="text-muted mt-2">Resource utilization across all your running servers</p>
         </div>
     </div>
 
-    @if (Instances == null || _isLoadingStats)
+    @if (instances == null || isLoadingStats)
     {
         <div class="d-flex justify-content-center mt-5 flex-column align-items-center">
             <div class="spinner-border text-accent" role="status">
@@ -36,17 +35,17 @@
         <div class="glass-card mb-4">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h4><i class="bi bi-hdd-network me-2"></i>Global Resources</h4>
-                @if (OnlineCount > 0)
+                @if (onlineCount > 0)
                 {
-                    <span class="badge bg-success">@OnlineCount / @Instances.Count Online</span>
+                    <span class="badge bg-success">@onlineCount / @instances.Count Online</span>
                 }
                 else
                 {
-                    <span class="badge bg-secondary">0 / @Instances.Count Online</span>
+                    <span class="badge bg-secondary">0 / @instances.Count Online</span>
                 }
             </div>
 
-            @if (OnlineCount == 0)
+            @if (onlineCount == 0)
             {
                 <div class="alert alert-secondary bg-dark border-secondary text-light">
                     <i class="bi bi-info-circle me-2"></i> No servers are currently running.
@@ -59,11 +58,11 @@
                     <div class="col-md-6">
                         <div class="p-3 rounded bg-dark border border-secondary text-center h-100">
                             <h6 class="text-muted mb-3"><i class="bi bi-cpu me-2"></i>Total CPU Usage</h6>
-                            <h2 class="text-white mb-3">@TotalCpu.ToString("F1")%</h2>
+                            <h2 class="text-white mb-3">@totalCpu.ToString("F1")%</h2>
                             <div class="progress bg-secondary" style="height: 10px;">
-                                <div class="progress-bar @(TotalCpu > 80 ? "bg-danger" : "bg-primary")" role="progressbar" style="width: @(Math.Min(100, TotalCpu))%"></div>
+                                <div class="progress-bar @(totalCpu > 80 ? "bg-danger" : "bg-primary")" role="progressbar" style="width: @(Math.Min(100, totalCpu))%"></div>
                             </div>
-                            <small class="text-muted mt-2 d-block">Across @OnlineCount containers<br/>(Total system CPU usage over @MaxCpus cores)</small>
+                            <small class="text-muted mt-2 d-block">Across @onlineCount containers<br/>(Total system CPU usage over @maxCpus cores)</small>
                         </div>
                     </div>
 
@@ -71,11 +70,11 @@
                     <div class="col-md-6">
                         <div class="p-3 rounded bg-dark border border-secondary text-center h-100">
                             <h6 class="text-muted mb-3"><i class="bi bi-memory me-2"></i>Total Memory Usage</h6>
-                            <h2 class="text-white mb-3">@TotalRamMb.ToString("F0") MB</h2>
+                            <h2 class="text-white mb-3">@totalRamMb.ToString("F0") MB</h2>
                             <div class="progress bg-secondary" style="height: 10px;">
-                                <div class="progress-bar bg-info" role="progressbar" style="width: @(TotalLimitMb > 0 ? Math.Min(100, (TotalRamMb / TotalLimitMb) * 100) : 0)%"></div>
+                                <div class="progress-bar bg-info" role="progressbar" style="width: @(totalLimitMb > 0 ? Math.Min(100, (totalRamMb / totalLimitMb) * 100) : 0)%"></div>
                             </div>
-                            <small class="text-muted mt-2 d-block">Out of @TotalLimitMb.ToString("F0") MB allocated limit</small>
+                            <small class="text-muted mt-2 d-block">Out of @totalLimitMb.ToString("F0") MB allocated limit</small>
                         </div>
                     </div>
                 </div>
@@ -83,13 +82,13 @@
                 <!-- Online Players -->
                 <div class="p-4 rounded bg-dark border border-secondary">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h5 class="m-0"><i class="bi bi-people-fill me-2"></i>Total Online Players (@TotalPlayers)</h5>
+                        <h5 class="m-0"><i class="bi bi-people-fill me-2"></i>Total Online Players (@totalPlayers)</h5>
                     </div>
                     
-                    @if (AllPlayers.Any())
+                    @if (allPlayers.Any())
                     {
                         <ul class="list-group list-group-flush bg-transparent">
-                            @foreach (string player in AllPlayers)
+                            @foreach (string player in allPlayers)
                             {
                                 <li class="list-group-item bg-transparent text-white border-secondary px-0">
                                     <i class="bi bi-person me-2 text-primary"></i>@player
@@ -108,34 +107,34 @@
 </div>
 
 @code {
-    private List<ServerInstance>? Instances;
-    private PeriodicTimer? _timer;
-    private CancellationTokenSource _cts = new();
+    private List<ServerInstance>? instances;
+    private PeriodicTimer? timer;
+    private CancellationTokenSource cts = new();
 
-    private int OnlineCount = 0;
-    private double TotalCpu = 0;
-    private double TotalRamMb = 0;
-    private double TotalLimitMb = 0;
-    private int TotalPlayers = 0;
-    private int MaxCpus = 0;
-    private List<string> AllPlayers = [];
-    private bool _isLoadingStats = true;
+    private int onlineCount;
+    private double totalCpu;
+    private double totalRamMb;
+    private double totalLimitMb;
+    private int totalPlayers;
+    private int maxCpus;
+    private List<string> allPlayers = [];
+    private bool isLoadingStats = true;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadInstances();
         
-        if (Instances != null && Instances.Any())
+        if (instances != null && instances.Any())
         {
             await FetchGlobalStatsAsync();
-            _isLoadingStats = false;
+            isLoadingStats = false;
             
-            _timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+            timer = new(TimeSpan.FromSeconds(3));
             _ = PollStatsAsync();
         }
         else
         {
-            _isLoadingStats = false;
+            isLoadingStats = false;
         }
     }
 
@@ -146,7 +145,7 @@
         
         if (user == null)
         {
-            Instances = new();
+            instances = new();
             return;
         }
 
@@ -154,7 +153,7 @@
 
         if (isAdmin)
         {
-            Instances = await DbContext.ServerInstances.ToListAsync();
+            instances = await DbContext.ServerInstances.ToListAsync();
         }
         else
         {
@@ -163,7 +162,7 @@
                 .Select(usa => usa.ServerInstanceId)
                 .ToListAsync();
                 
-            Instances = await DbContext.ServerInstances
+            instances = await DbContext.ServerInstances
                 .Where(s => allowedServerIds.Contains(s.Id))
                 .ToListAsync();
         }
@@ -171,7 +170,7 @@
 
     private async Task FetchGlobalStatsAsync()
     {
-        if (Instances == null) return;
+        if (instances == null) return;
 
         int online = 0;
         double cpu = 0;
@@ -180,11 +179,11 @@
         int maxCpus = 0;
         List<string> players = [];
 
-        foreach (ServerInstance instance in Instances)
+        foreach (ServerInstance instance in instances)
         {
             if (InstanceManager.IsRunning(instance.Id))
             {
-                var stats = await InstanceManager.GetLiveStatsAsync(instance);
+                ServerStats stats = await InstanceManager.GetLiveStatsAsync(instance);
                 if (stats.IsOnline)
                 {
                     online++;
@@ -204,25 +203,25 @@
             }
         }
 
-        OnlineCount = online;
-        TotalCpu = cpu;
-        TotalRamMb = ram;
-        TotalLimitMb = limit;
-        MaxCpus = maxCpus;
-        AllPlayers = players;
-        TotalPlayers = players.Count;
+        onlineCount = online;
+        totalCpu = cpu;
+        totalRamMb = ram;
+        totalLimitMb = limit;
+        this.maxCpus = maxCpus;
+        allPlayers = players;
+        totalPlayers = players.Count;
     }
 
     private async Task PollStatsAsync()
     {
         try
         {
-            while (await _timer!.WaitForNextTickAsync(_cts.Token))
+            while (await timer!.WaitForNextTickAsync(cts.Token))
             {
                 bool isHidden = false;
                 try
                 {
-                    isHidden = await JSRuntime.InvokeAsync<bool>("eval", "document.hidden");
+                    isHidden = await JsRuntime.InvokeAsync<bool>("eval", "document.hidden");
                 }
                 catch { }
 
@@ -241,8 +240,8 @@
 
     public void Dispose()
     {
-        _cts.Cancel();
-        _cts.Dispose();
-        _timer?.Dispose();
+        cts.Cancel();
+        cts.Dispose();
+        timer?.Dispose();
     }
 }

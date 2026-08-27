@@ -6,7 +6,7 @@ namespace FactorioServerTest;
 [TestClass]
 public sealed class FactorioWebApiTests
 {
-    private static readonly FactorioWebApi WebApi = new(new("jrdiver", "f357fe961a77af8545be75be26e17b"), new FactorioLibrary.Services.GlobalSettingsService("test_settings.json"));
+    private static readonly FactorioWebApi WebApi = new(new("jrdiver", "f357fe961a77af8545be75be26e17b"), new("test_settings.json"));
 
     [TestMethod]
     public async Task GetVersions_ShouldReturnValidVersionList()

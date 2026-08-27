@@ -46,7 +46,7 @@ public static class AuthEndpoints
 
                 // Create Administrator role if it doesn't exist and assign to user
                 if (!await roleManager.RoleExistsAsync("Administrator"))
-                    await roleManager.CreateAsync(new IdentityRole("Administrator"));
+                    await roleManager.CreateAsync(new("Administrator"));
                 await userManager.AddToRoleAsync(user, "Administrator");
 
                 await signInManager.SignInAsync(user, isPersistent: true);

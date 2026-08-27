@@ -1,11 +1,11 @@
 @page "/admin/modpacks"
+@using System.IO.Compression
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
-@using Microsoft.AspNetCore.Authorization
 @using Microsoft.EntityFrameworkCore
 @attribute [Authorize(Roles = "Administrator")]
 @inject AppDbContext DbContext
-@inject IJSRuntime JS
+@inject IJSRuntime Js
 
 <PageTitle>Modpacks - Factorio Server Controller</PageTitle>
 
@@ -13,10 +13,10 @@
     <h2><i class="bi bi-box2-fill me-2"></i>Modpacks</h2>
     <div>
         <InputFile OnChange="UploadModpack" class="d-none" id="modpackUpload" accept=".zip,.json,.dat" multiple />
-        <button class="btn btn-glass" type="button" onclick="document.getElementById('modpackUpload').click()" disabled="@IsUploading">
-            @if (IsUploading)
+        <button class="btn btn-glass" type="button" onclick="document.getElementById('modpackUpload').click()" disabled="@isUploading">
+            @if (isUploading)
             {
-                <span class="spinner-border spinner-border-sm me-1"></span> <span>Uploading... @(!string.IsNullOrEmpty(UploadProgress) ? $"({UploadProgress})" : "")</span>
+                <span class="spinner-border spinner-border-sm me-1"></span> <span>Uploading... @(!string.IsNullOrEmpty(uploadProgress) ? $"({uploadProgress})" : "")</span>
             }
             else
             {
@@ -32,21 +32,21 @@
         Modpacks are a snapshot of a <code class="text-info">mod-list.json</code> and <code class="text-info">mod-settings.dat</code>. You can apply these to any server instance to quickly configure it. Upload a <code>.zip</code> containing these files, or multi-select the raw <code>.json</code> and <code>.dat</code> files directly to create a modpack.
     </div>
 
-    @if (!string.IsNullOrEmpty(ErrorMessage))
+    @if (!string.IsNullOrEmpty(errorMessage))
     {
-        <div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>@ErrorMessage</div>
+        <div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>@errorMessage</div>
     }
     
-    @if (!string.IsNullOrEmpty(SuccessMessage))
+    @if (!string.IsNullOrEmpty(successMessage))
     {
-        <div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>@SuccessMessage</div>
+        <div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>@successMessage</div>
     }
 
-    @if (ModpacksList == null)
+    @if (modpacksList == null)
     {
         <div class="text-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span> Loading modpacks...</div>
     }
-    else if (!ModpacksList.Any())
+    else if (!modpacksList.Any())
     {
         <div class="text-center text-muted my-5">
             <i class="bi bi-box2 display-1 mb-3 d-block text-secondary"></i>
@@ -66,7 +66,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var modpack in ModpacksList.OrderBy(m => m.Name))
+                    @foreach (Modpack modpack in modpacksList.OrderBy(m => m.Name))
                     {
                         <tr>
                             <td>
@@ -88,10 +88,10 @@
 </div>
 
 @code {
-    private List<Modpack>? ModpacksList;
-    private bool IsUploading = false;
-    private string? ErrorMessage;
-    private string? SuccessMessage;
+    private List<Modpack>? modpacksList;
+    private bool isUploading;
+    private string? errorMessage;
+    private string? successMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -100,19 +100,19 @@
 
     private async Task LoadModpacks()
     {
-        ModpacksList = await DbContext.Modpacks.ToListAsync();
+        modpacksList = await DbContext.Modpacks.ToListAsync();
     }
 
-    private string? UploadProgress;
+    private string? uploadProgress;
 
     private async Task UploadModpack(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
     {
-        var files = e.GetMultipleFiles(50);
+        IReadOnlyList<IBrowserFile> files = e.GetMultipleFiles(50);
         if (!files.Any()) return;
 
-        IsUploading = true;
-        ErrorMessage = null;
-        SuccessMessage = null;
+        isUploading = true;
+        errorMessage = null;
+        successMessage = null;
         int completed = 0;
         int total = files.Count;
         int successCount = 0;
@@ -121,25 +121,25 @@
         try
         {
             // First, process any direct .json / .dat file uploads together as one modpack
-            var rawJsonFile = files.FirstOrDefault(f => f.Name.Equals("mod-list.json", StringComparison.OrdinalIgnoreCase));
-            var rawDatFile = files.FirstOrDefault(f => f.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
+            IBrowserFile? rawJsonFile = files.FirstOrDefault(f => f.Name.Equals("mod-list.json", StringComparison.OrdinalIgnoreCase));
+            IBrowserFile? rawDatFile = files.FirstOrDefault(f => f.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
 
             if (rawJsonFile != null || rawDatFile != null)
             {
                 if (rawJsonFile == null)
                 {
-                    ErrorMessage = "You must include the 'mod-list.json' file to create a modpack. Uploading 'mod-settings.dat' alone is not supported.";
+                    errorMessage = "You must include the 'mod-list.json' file to create a modpack. Uploading 'mod-settings.dat' alone is not supported.";
                     if (rawDatFile != null) completed++;
                 }
                 else
                 {
-                    UploadProgress = "Reading loose files...";
+                    uploadProgress = "Reading loose files...";
                     StateHasChanged();
                     await Task.Delay(1);
 
                     string jsonContent;
-                    using (var jsonStream = rawJsonFile.OpenReadStream(1024 * 1024 * 10))
-                    using (var reader = new StreamReader(jsonStream))
+                    await using (Stream jsonStream = rawJsonFile.OpenReadStream(1024 * 1024 * 10))
+                    using (StreamReader reader = new StreamReader(jsonStream))
                     {
                         jsonContent = await reader.ReadToEndAsync();
                     }
@@ -147,19 +147,19 @@
                     byte[]? datContent = null;
                     if (rawDatFile != null)
                     {
-                        using var datStream = rawDatFile.OpenReadStream(1024 * 1024 * 50);
-                        using var datMs = new MemoryStream();
+                        await using Stream datStream = rawDatFile.OpenReadStream(1024 * 1024 * 50);
+                        using MemoryStream datMs = new MemoryStream();
                         await datStream.CopyToAsync(datMs);
                         datContent = datMs.ToArray();
                     }
 
-                    string modpackName = await JS.InvokeAsync<string>("prompt", "Enter a name for the uploaded config files:", "My Modpack");
+                    string modpackName = await Js.InvokeAsync<string>("prompt", "Enter a name for the uploaded config files:", "My Modpack");
                     if (!string.IsNullOrWhiteSpace(modpackName))
                     {
-                        string factorioVersion = await JS.InvokeAsync<string>("prompt", $"Enter the target Factorio version for '{modpackName}' (e.g. 2.0 or latest):", "latest");
+                        string factorioVersion = await Js.InvokeAsync<string>("prompt", $"Enter the target Factorio version for '{modpackName}' (e.g. 2.0 or latest):", "latest");
                         if (string.IsNullOrWhiteSpace(factorioVersion)) factorioVersion = "latest";
 
-                        var modpack = new Modpack
+                        Modpack modpack = new Modpack
                         {
                             Name = modpackName,
                             TargetFactorioVersion = factorioVersion,
@@ -177,34 +177,34 @@
             }
 
             // Then, process any uploaded .zip files individually
-            var zipFiles = files.Where(f => f.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)).ToList();
+            List<IBrowserFile> zipFiles = files.Where(f => f.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)).ToList();
             
-            foreach (var file in zipFiles)
+            foreach (IBrowserFile file in zipFiles)
             {
-                UploadProgress = $"{completed + 1}/{total}";
+                uploadProgress = $"{completed + 1}/{total}";
                 StateHasChanged();
                 await Task.Delay(1);
 
-                using var stream = file.OpenReadStream(1024 * 1024 * 100); // 100MB max
-                using var ms = new MemoryStream();
+                await using Stream stream = file.OpenReadStream(1024 * 1024 * 100); // 100MB max
+                using MemoryStream ms = new MemoryStream();
                 await stream.CopyToAsync(ms);
                 ms.Position = 0;
 
-                using var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Read);
+                await using ZipArchive archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Read);
                 
-                var modListEntry = archive.Entries.FirstOrDefault(entry => entry.Name.Equals("mod-list.json", StringComparison.OrdinalIgnoreCase));
-                var modSettingsEntry = archive.Entries.FirstOrDefault(entry => entry.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
+                ZipArchiveEntry? modListEntry = archive.Entries.FirstOrDefault(entry => entry.Name.Equals("mod-list.json", StringComparison.OrdinalIgnoreCase));
+                ZipArchiveEntry? modSettingsEntry = archive.Entries.FirstOrDefault(entry => entry.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
 
                 if (modListEntry == null)
                 {
-                    ErrorMessage = $"File '{file.Name}' skipped: must contain a mod-list.json file.";
+                    errorMessage = $"File '{file.Name}' skipped: must contain a mod-list.json file.";
                     completed++;
                     continue;
                 }
 
                 string jsonContent;
-                using (var jsonStream = modListEntry.Open())
-                using (var reader = new StreamReader(jsonStream))
+                await using (Stream jsonStream = modListEntry.Open())
+                using (StreamReader reader = new StreamReader(jsonStream))
                 {
                     jsonContent = await reader.ReadToEndAsync();
                 }
@@ -212,23 +212,23 @@
                 byte[]? datContent = null;
                 if (modSettingsEntry != null)
                 {
-                    using var datStream = modSettingsEntry.Open();
-                    using var datMs = new MemoryStream();
+                    await using Stream datStream = modSettingsEntry.Open();
+                    using MemoryStream datMs = new MemoryStream();
                     await datStream.CopyToAsync(datMs);
                     datContent = datMs.ToArray();
                 }
 
-                string modpackName = await JS.InvokeAsync<string>("prompt", $"Enter a name for Modpack '{file.Name}':", Path.GetFileNameWithoutExtension(file.Name));
+                string modpackName = await Js.InvokeAsync<string>("prompt", $"Enter a name for Modpack '{file.Name}':", Path.GetFileNameWithoutExtension(file.Name));
                 if (string.IsNullOrWhiteSpace(modpackName))
                 {
                     completed++;
                     continue;
                 }
                 
-                string factorioVersion = await JS.InvokeAsync<string>("prompt", $"Enter the target Factorio version for '{modpackName}' (e.g. 2.0 or latest):", "latest");
+                string factorioVersion = await Js.InvokeAsync<string>("prompt", $"Enter the target Factorio version for '{modpackName}' (e.g. 2.0 or latest):", "latest");
                 if (string.IsNullOrWhiteSpace(factorioVersion)) factorioVersion = "latest";
 
-                var modpack = new Modpack
+                Modpack modpack = new Modpack
                 {
                     Name = modpackName,
                     TargetFactorioVersion = factorioVersion,
@@ -242,37 +242,37 @@
             }
             
             // Note if they uploaded invalid loose files
-            var invalidLooseFiles = files.Where(f => !f.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && 
-                                                     !f.Name.Equals("mod-list.json", StringComparison.OrdinalIgnoreCase) && 
-                                                     !f.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
-            foreach (var f in invalidLooseFiles)
+            IEnumerable<IBrowserFile> invalidLooseFiles = files.Where(f => !f.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && 
+                                                                           !f.Name.Equals("mod-list.json", StringComparison.OrdinalIgnoreCase) && 
+                                                                           !f.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
+            foreach (IBrowserFile f in invalidLooseFiles)
             {
-                ErrorMessage = (ErrorMessage == null ? "" : ErrorMessage + "\n") + $"File '{f.Name}' skipped: Only .zip, mod-list.json, and mod-settings.dat are allowed.";
+                errorMessage = (errorMessage == null ? "" : errorMessage + "\n") + $"File '{f.Name}' skipped: Only .zip, mod-list.json, and mod-settings.dat are allowed.";
             }
             
             await DbContext.SaveChangesAsync();
             
             if (successCount > 0)
             {
-                SuccessMessage = $"Successfully created {successCount} modpack(s)!";
+                successMessage = $"Successfully created {successCount} modpack(s)!";
             }
             await LoadModpacks();
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Upload failed: {ex.Message}";
+            errorMessage = $"Upload failed: {ex.Message}";
         }
         finally
         {
-            UploadProgress = null;
-            IsUploading = false;
+            uploadProgress = null;
+            isUploading = false;
             StateHasChanged();
         }
     }
 
     private async Task DeleteModpackWithConfirm(Modpack modpack)
     {
-        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to delete the '{modpack.Name}' modpack?");
+        bool confirmed = await Js.InvokeAsync<bool>("confirm", $"Are you sure you want to delete the '{modpack.Name}' modpack?");
         if (confirmed)
         {
             DbContext.Modpacks.Remove(modpack);

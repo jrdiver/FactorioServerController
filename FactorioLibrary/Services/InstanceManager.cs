@@ -1,85 +1,85 @@
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using FactorioLibrary.Data;
 using FactorioLibrary.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using System.Collections.Concurrent;
-using System.Runtime.InteropServices;
 
 namespace FactorioLibrary.Services;
 
 public class InstanceManager
 {
-    private readonly DockerClient _dockerClient;
-    private readonly string _hostBaseMountPath;
-    private readonly string _internalBaseMountPath;
-    private readonly string _hostDataPath;
-    private readonly string _internalDataPath;
-    private readonly RconService _rconService;
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly DockerClient dockerClient;
+    private readonly string hostBaseMountPath;
+    private readonly string internalBaseMountPath;
+    private readonly string hostDataPath;
+    private readonly string internalDataPath;
+    private readonly RconService rconService;
+    private readonly IServiceScopeFactory scopeFactory;
 
     // Maps instance ID to Docker Container ID
-    private readonly ConcurrentDictionary<int, string> _runningContainers = new();
+    private readonly ConcurrentDictionary<int, string> runningContainers = new();
 
     // Cache stats for 2.5 seconds to prevent multiple clients from hammering Docker API
-    private readonly ConcurrentDictionary<int, (DateTime FetchedAt, ServerStats Stats)> _statsCache = new();
+    private readonly ConcurrentDictionary<int, (DateTime FetchedAt, ServerStats Stats)> statsCache = new();
     
-    private readonly Timer _healthCheckTimer;
+    private readonly Timer healthCheckTimer;
 
     public InstanceManager(IConfiguration configuration, RconService rconService, IServiceScopeFactory scopeFactory)
     {
-        _rconService = rconService;
-        _scopeFactory = scopeFactory;
+        this.rconService = rconService;
+        this.scopeFactory = scopeFactory;
         // Use named pipes on Windows, unix socket on Linux/Unraid
         Uri dockerUri = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? new Uri("npipe://./pipe/docker_engine")
+            ? new("npipe://./pipe/docker_engine")
             : new Uri("unix:///var/run/docker.sock");
 
-        _dockerClient = new DockerClientConfiguration(dockerUri).CreateClient();
+        dockerClient = new DockerClientConfiguration(dockerUri).CreateClient();
 
         // Single unified path on the host for all app-data and instances
-        _hostDataPath = configuration.GetValue<string>("HOST_DATA_PATH");
-        if (string.IsNullOrWhiteSpace(_hostDataPath))
-            _hostDataPath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? @"C:\Factorio" : "/data";
+        hostDataPath = configuration.GetValue<string>("HOST_DATA_PATH");
+        if (string.IsNullOrWhiteSpace(hostDataPath))
+            hostDataPath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? @"C:\Factorio" : "/data";
 
-        _hostBaseMountPath = Path.Combine(_hostDataPath, "instances");
+        hostBaseMountPath = Path.Combine(hostDataPath, "instances");
         
         if (Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true")
         {
-            _internalDataPath = "/data";
-            _internalBaseMountPath = "/data/instances";
+            internalDataPath = "/data";
+            internalBaseMountPath = "/data/instances";
         }
         else
         {
-            _internalDataPath = _hostDataPath;
-            _internalBaseMountPath = _hostBaseMountPath;
+            internalDataPath = hostDataPath;
+            internalBaseMountPath = hostBaseMountPath;
         }
 
-        _healthCheckTimer = new Timer(async _ => await CheckContainerHealthAsync(), null, 5000, 5000);
+        healthCheckTimer = new(async _ => await CheckContainerHealthAsync(), null, 5000, 5000);
 
         // Auto-discover any already running containers
         _ = InitializeRunningContainersAsync();
     }
 
-    private string GetLocalDataPath(int instanceId) => Path.Combine(_internalBaseMountPath, instanceId.ToString());
-    private string GetInstanceHostPath(int instanceId) => Path.Combine(_hostBaseMountPath, instanceId.ToString());
+    private string GetLocalDataPath(int instanceId) => Path.Combine(internalBaseMountPath, instanceId.ToString());
+    private string GetInstanceHostPath(int instanceId) => Path.Combine(hostBaseMountPath, instanceId.ToString());
 
     private async Task CheckContainerHealthAsync()
     {
-        foreach (var kvp in _runningContainers.ToArray())
+        foreach (KeyValuePair<int, string> kvp in runningContainers.ToArray())
         {
             try
             {
-                var c = await _dockerClient.Containers.InspectContainerAsync(kvp.Value);
+                ContainerInspectResponse c = await dockerClient.Containers.InspectContainerAsync(kvp.Value);
                 if (!c.State.Running && !c.State.Restarting)
                 {
-                    _runningContainers.TryRemove(kvp.Key, out _);
+                    runningContainers.TryRemove(kvp.Key, out _);
                 }
             }
             catch
             {
-                _runningContainers.TryRemove(kvp.Key, out _);
+                runningContainers.TryRemove(kvp.Key, out _);
             }
         }
     }
@@ -88,14 +88,14 @@ public class InstanceManager
     {
         try
         {
-            IList<ContainerListResponse> containers = await _dockerClient.Containers.ListContainersAsync(new ContainersListParameters { All = false });
+            IList<ContainerListResponse> containers = await dockerClient.Containers.ListContainersAsync(new() { All = false });
             foreach (ContainerListResponse? c in containers)
             {
                 if (c.Names != null && c.Names.Any(n => n.StartsWith("/factorio_server_")))
                 {
                     string name = c.Names.First(n => n.StartsWith("/factorio_server_"));
                     if (int.TryParse(name.Replace("/factorio_server_", ""), out int id))
-                        _runningContainers.TryAdd(id, c.ID);
+                        runningContainers.TryAdd(id, c.ID);
                 }
             }
         }
@@ -104,7 +104,7 @@ public class InstanceManager
 
     public async Task<(bool Success, bool CleanedCorruptSave)> StartInstanceAsync(ServerInstance instance)
     {
-        if (_runningContainers.ContainsKey(instance.Id))
+        if (runningContainers.ContainsKey(instance.Id))
             return (false, false); // Already tracked as running
 
         string containerName = $"factorio_server_{instance.Id}";
@@ -117,11 +117,11 @@ public class InstanceManager
 
             // 1. Ensure the image is pulled
             Console.WriteLine($"[Instance {instance.Id}] Ensuring image is pulled...");
-            await _dockerClient.Images.CreateImageAsync(new ImagesCreateParameters { FromImage = image }, null, new Progress<JSONMessage>());
+            await dockerClient.Images.CreateImageAsync(new() { FromImage = image }, null, new Progress<JSONMessage>());
 
             // 2. Remove existing container with the same name if it exists (but is stopped)
             Console.WriteLine($"[Instance {instance.Id}] Checking for existing containers named {containerName}...");
-            IList<ContainerListResponse> existingContainers = await _dockerClient.Containers.ListContainersAsync(new ContainersListParameters { All = true });
+            IList<ContainerListResponse> existingContainers = await dockerClient.Containers.ListContainersAsync(new() { All = true });
 
             foreach (ContainerListResponse? c in existingContainers)
             {
@@ -130,19 +130,19 @@ public class InstanceManager
                     if (c.State != "running")
                     {
                         Console.WriteLine($"[Instance {instance.Id}] Found stopped container {c.ID}. Removing it...");
-                        await _dockerClient.Containers.RemoveContainerAsync(c.ID, new ContainerRemoveParameters { Force = true });
+                        await dockerClient.Containers.RemoveContainerAsync(c.ID, new() { Force = true });
                     }
                     else
                     {
                         Console.WriteLine($"[Instance {instance.Id}] Container {c.ID} is already running.");
-                        _runningContainers.TryAdd(instance.Id, c.ID);
+                        runningContainers.TryAdd(instance.Id, c.ID);
                         return (true, false);
                     }
                 }
             }
 
             // 3. Create host directory path for this specific instance
-            string instanceHostPath = $"{_hostBaseMountPath.TrimEnd('/', '\\')}/{instance.Id}";
+            string instanceHostPath = $"{hostBaseMountPath.TrimEnd('/', '\\')}/{instance.Id}";
             Console.WriteLine($"[Instance {instance.Id}] Host Mount Path configured as: {instanceHostPath}");
 
             // Note: Docker will automatically create the host directory if it doesn't exist when the volume is mounted,
@@ -215,12 +215,12 @@ public class InstanceManager
 
             Console.WriteLine($"[Instance {instance.Id}] Creating Docker container {containerName} with Port: {instance.Port}, RconPort: {instance.RconPort}...");
 
-            CreateContainerResponse response = await _dockerClient.Containers.CreateContainerAsync(new CreateContainerParameters
+            CreateContainerResponse response = await dockerClient.Containers.CreateContainerAsync(new()
             {
                 Image = image,
                 Name = containerName,
                 Env = envVars,
-                HostConfig = new HostConfig
+                HostConfig = new()
                 {
                     PortBindings = new Dictionary<string, IList<PortBinding>>
                     {
@@ -236,12 +236,12 @@ public class InstanceManager
 
             // 5. Start the container
             Console.WriteLine($"[Instance {instance.Id}] Starting Docker container {response.ID}...");
-            bool started = await _dockerClient.Containers.StartContainerAsync(response.ID, null);
+            bool started = await dockerClient.Containers.StartContainerAsync(response.ID, null);
 
             if (started)
             {
                 Console.WriteLine($"[Instance {instance.Id}] Successfully started!");
-                _runningContainers.TryAdd(instance.Id, response.ID);
+                runningContainers.TryAdd(instance.Id, response.ID);
                 return (true, cleanedCorruptSave);
             }
 
@@ -259,12 +259,12 @@ public class InstanceManager
 
     public async Task StopInstanceAsync(int instanceId)
     {
-        if (_runningContainers.TryGetValue(instanceId, out string? containerId))
+        if (runningContainers.TryGetValue(instanceId, out string? containerId))
         {
             try
             {
                 // Try clean RCON shutdown first to bypass Docker's buggy SIGTERM routing
-                using IServiceScope scope = _scopeFactory.CreateScope();
+                using IServiceScope scope = scopeFactory.CreateScope();
                 AppDbContext dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 GlobalSettingsService settingsService = scope.ServiceProvider.GetRequiredService<GlobalSettingsService>();
                 
@@ -274,14 +274,14 @@ public class InstanceManager
                 if (instance != null)
                 {
                     Console.WriteLine($"[Instance {instanceId}] Initiating clean shutdown via RCON /quit...");
-                    await _rconService.SendCommandAsync(instanceId, instance.RconPort, instance.RconPassword, "/quit");
+                    await rconService.SendCommandAsync(instanceId, instance.RconPort, instance.RconPassword, "/quit");
                     
                     // Wait for Factorio to cleanly save and exit the container on its own
                     for (int i = 0; i < timeoutSeconds; i++)
                     {
                         try 
                         {
-                            var c = await _dockerClient.Containers.InspectContainerAsync(containerId);
+                            ContainerInspectResponse c = await dockerClient.Containers.InspectContainerAsync(containerId);
                             if (!c.State.Running) break;
                         } catch { break; } // Container was removed/stopped
                         
@@ -290,7 +290,7 @@ public class InstanceManager
                 }
 
                 // Fallback catch-all to ensure the container is stopped if it hung
-                await _dockerClient.Containers.StopContainerAsync(containerId, new ContainerStopParameters { WaitBeforeKillSeconds = 10 });
+                await dockerClient.Containers.StopContainerAsync(containerId, new() { WaitBeforeKillSeconds = 10 });
             }
             catch
             {
@@ -298,7 +298,7 @@ public class InstanceManager
             }
             finally
             {
-                _runningContainers.TryRemove(instanceId, out _);
+                runningContainers.TryRemove(instanceId, out _);
             }
         }
     }
@@ -309,16 +309,16 @@ public class InstanceManager
         string containerName = $"factorio_server_{instanceId}";
         try
         {
-            IList<ContainerListResponse> existingContainers = await _dockerClient.Containers.ListContainersAsync(new ContainersListParameters { All = true });
+            IList<ContainerListResponse> existingContainers = await dockerClient.Containers.ListContainersAsync(new() { All = true });
 
             foreach (ContainerListResponse? c in existingContainers)
             {
                 if (c.Names.Contains($"/{containerName}"))
                 {
                     if (c.State == "running")
-                        await _dockerClient.Containers.StopContainerAsync(c.ID, new ContainerStopParameters { WaitBeforeKillSeconds = 60 });
+                        await dockerClient.Containers.StopContainerAsync(c.ID, new() { WaitBeforeKillSeconds = 60 });
 
-                    await _dockerClient.Containers.RemoveContainerAsync(c.ID, new ContainerRemoveParameters { Force = true });
+                    await dockerClient.Containers.RemoveContainerAsync(c.ID, new() { Force = true });
                 }
             }
         }
@@ -328,7 +328,7 @@ public class InstanceManager
         }
         finally
         {
-            _runningContainers.TryRemove(instanceId, out _);
+            runningContainers.TryRemove(instanceId, out _);
         }
 
         // 2. Delete host directory
@@ -350,12 +350,12 @@ public class InstanceManager
     {
         // Simple in-memory check for UI responsiveness. 
         // A more robust implementation would poll the Docker API, but this is fine for now.
-        return _runningContainers.ContainsKey(instanceId);
+        return runningContainers.ContainsKey(instanceId);
     }
 
     public async Task<MultiplexedStream?> GetLogStreamAsync(int instanceId, CancellationToken cancellationToken = default)
     {
-        if (_runningContainers.TryGetValue(instanceId, out string? containerId))
+        if (runningContainers.TryGetValue(instanceId, out string? containerId))
         {
             try
             {
@@ -367,7 +367,7 @@ public class InstanceManager
                     Tail = "100" // Get last 100 lines + follow new ones
                 };
 
-                return await _dockerClient.Containers.GetContainerLogsAsync(containerId, false, parameters, cancellationToken);
+                return await dockerClient.Containers.GetContainerLogsAsync(containerId, false, parameters, cancellationToken);
             }
             catch
             {
@@ -379,11 +379,11 @@ public class InstanceManager
 
     public async Task<string?> GetContainerIpAddressAsync(int instanceId)
     {
-        if (_runningContainers.TryGetValue(instanceId, out string? containerId))
+        if (runningContainers.TryGetValue(instanceId, out string? containerId))
         {
             try
             {
-                ContainerInspectResponse inspect = await _dockerClient.Containers.InspectContainerAsync(containerId);
+                ContainerInspectResponse inspect = await dockerClient.Containers.InspectContainerAsync(containerId);
                 return inspect.NetworkSettings.IPAddress;
             }
             catch { }
@@ -399,13 +399,13 @@ public class InstanceManager
 
         try
         {
-            await _dockerClient.Images.CreateImageAsync(new ImagesCreateParameters { FromImage = image }, null, new Progress<JSONMessage>());
+            await dockerClient.Images.CreateImageAsync(new() { FromImage = image }, null, new Progress<JSONMessage>());
 
-            CreateContainerResponse response = await _dockerClient.Containers.CreateContainerAsync(new CreateContainerParameters
+            CreateContainerResponse response = await dockerClient.Containers.CreateContainerAsync(new()
             {
                 Image = image,
                 Name = containerName,
-                HostConfig = new HostConfig
+                HostConfig = new()
                 {
                     Binds = [$"{instanceHostPath}:/factorio"]
                 },
@@ -415,13 +415,13 @@ public class InstanceManager
                 Cmd = ["--sync-mods", $"/factorio/saves/{saveName}", "--mod-directory", "/factorio/mods"]
             });
 
-            await _dockerClient.Containers.StartContainerAsync(response.ID, null);
+            await dockerClient.Containers.StartContainerAsync(response.ID, null);
 
             // Wait for it to finish parsing and syncing
-            await _dockerClient.Containers.WaitContainerAsync(response.ID);
+            await dockerClient.Containers.WaitContainerAsync(response.ID);
 
             // Fetch the logs to return to the UI (especially if there's a version mismatch error)
-            MultiplexedStream logsStream = await _dockerClient.Containers.GetContainerLogsAsync(response.ID, false, new ContainerLogsParameters
+            MultiplexedStream logsStream = await dockerClient.Containers.GetContainerLogsAsync(response.ID, false, new()
             {
                 ShowStdout = true,
                 ShowStderr = true
@@ -431,7 +431,7 @@ public class InstanceManager
             string fullLog = logs.stdout + "\n" + logs.stderr;
 
             // Remove the temporary container
-            await _dockerClient.Containers.RemoveContainerAsync(response.ID, new ContainerRemoveParameters { Force = true });
+            await dockerClient.Containers.RemoveContainerAsync(response.ID, new() { Force = true });
 
             // If it crashed or had an error, it often outputs Error or fails to write
             bool success = !fullLog.Contains("Error", StringComparison.OrdinalIgnoreCase);
@@ -454,7 +454,7 @@ public class InstanceManager
 
     public async Task ResolveMissingModsFromGlobalAsync(int instanceId, Action<int, int, string>? progressCallback = null)
     {
-        string globalPath = Path.Combine(_internalDataPath, "global_mods");
+        string globalPath = Path.Combine(internalDataPath, "global_mods");
         if (!Directory.Exists(globalPath)) return;
 
         string targetModsDir = GetModsDirectory(instanceId);
@@ -464,9 +464,9 @@ public class InstanceManager
         if (!File.Exists(modListPath)) return;
 
         string modListContent = await File.ReadAllTextAsync(modListPath);
-        var globalZips = Directory.GetFiles(globalPath, "*.zip");
+        string[] globalZips = Directory.GetFiles(globalPath, "*.zip");
 
-        var matchingZips = new List<string>();
+        List<string> matchingZips = new List<string>();
         foreach (string zip in globalZips)
         {
             string zipName = Path.GetFileName(zip);
@@ -527,12 +527,12 @@ public class InstanceManager
 
     public async Task<ServerStats> GetLiveStatsAsync(ServerInstance instance)
     {
-        if (_statsCache.TryGetValue(instance.Id, out (DateTime FetchedAt, ServerStats Stats) cached) && (DateTime.UtcNow - cached.FetchedAt).TotalSeconds < 2.5)
+        if (statsCache.TryGetValue(instance.Id, out (DateTime FetchedAt, ServerStats Stats) cached) && (DateTime.UtcNow - cached.FetchedAt).TotalSeconds < 2.5)
             return cached.Stats;
 
         ServerStats stats = new() { IsOnline = false };
 
-        if (_runningContainers.TryGetValue(instance.Id, out string? containerId))
+        if (runningContainers.TryGetValue(instance.Id, out string? containerId))
         {
             stats.IsOnline = true;
             try
@@ -541,7 +541,7 @@ public class InstanceManager
                 ContainerStatsParameters param = new() { Stream = false };
                 ContainerStatsResponse? lastStats = null;
                 SyncProgress<ContainerStatsResponse> progress = new(msg => lastStats = msg);
-                await _dockerClient.Containers.GetContainerStatsAsync(containerId, param, progress, CancellationToken.None);
+                await dockerClient.Containers.GetContainerStatsAsync(containerId, param, progress, CancellationToken.None);
 
                 if (lastStats != null)
                 {
@@ -562,7 +562,7 @@ public class InstanceManager
 
                 // 2. Get RCON Stats
                 if (instance.RconPort > 0 && !string.IsNullOrEmpty(instance.RconPassword))
-                    stats.OnlinePlayers = await _rconService.GetOnlinePlayersAsync(instance.Id, instance.RconPort, instance.RconPassword);
+                    stats.OnlinePlayers = await rconService.GetOnlinePlayersAsync(instance.Id, instance.RconPort, instance.RconPassword);
             }
             catch
             {
@@ -570,7 +570,7 @@ public class InstanceManager
             }
         }
 
-        _statsCache[instance.Id] = (DateTime.UtcNow, stats);
+        statsCache[instance.Id] = (DateTime.UtcNow, stats);
         return stats;
     }
 
@@ -592,17 +592,24 @@ public class InstanceManager
 
     public string GetConfigDirectory(int instanceId)
     {
-        string instanceHostPath = GetInstanceHostPath(instanceId);
-        string localDataPath = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" 
-            ? $"/factorio/{instanceId}" 
-            : instanceHostPath;
-            
+        string localDataPath = GetLocalDataPath(instanceId);
         return Path.Combine(localDataPath, "config");
+    }
+
+    public string GetGlobalModsDirectory()
+    {
+        string globalPath = Path.Combine(internalDataPath, "global_mods");
+        if (!Directory.Exists(globalPath)) Directory.CreateDirectory(globalPath);
+        return globalPath;
+    }
+
+    public string GetAllInstancesDirectory()
+    {
+        return internalBaseMountPath;
     }
 }
 
 public class SyncProgress<T>(Action<T> handler) : IProgress<T>
 {
-    private readonly Action<T> _handler = handler;
-    public void Report(T value) => _handler(value);
+    public void Report(T value) => handler(value);
 }

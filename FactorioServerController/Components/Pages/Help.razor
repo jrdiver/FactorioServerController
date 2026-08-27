@@ -1,5 +1,4 @@
 @page "/help"
-@using Microsoft.AspNetCore.Authorization
 @attribute [Authorize]
 
 <PageTitle>Help & Documentation</PageTitle>
@@ -34,7 +33,7 @@
                 </div>
                 <div class="mt-5 pt-3 border-top border-secondary">
                     <h5 class="text-white"><i class="bi bi-info-circle me-2"></i>System Info</h5>
-                    <p class="text-muted mb-0">Factorio Server Controller Version: <strong>@AppVersion</strong></p>
+                    <p class="text-muted mb-0">Factorio Server Controller Version: <strong>@appVersion</strong></p>
                 </div>
             </div>
         </div>
@@ -123,10 +122,10 @@
 </div>
 
 @code {
-    private string AppVersion = "Unknown";
+    private string appVersion = "Unknown";
 
     protected override void OnInitialized()
     {
-        AppVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "Unknown";
+        appVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "Unknown";
     }
 }

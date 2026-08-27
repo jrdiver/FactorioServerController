@@ -10,7 +10,7 @@ public class InstanceManagerTests
     {
         Dictionary<string, string?> inMemorySettings = new()
         {
-            {"HOST_BASE_MOUNT_PATH", hostBasePath}
+            {"HOST_DATA_PATH", hostBasePath}
         };
 
         return new ConfigurationBuilder()
@@ -23,7 +23,7 @@ public class InstanceManagerTests
     {
         // Arrange
         IConfiguration config = CreateConfig("/custom/host/path");
-        InstanceManager manager = new(config, new RconService(), null!);
+        InstanceManager manager = new(config, new(), null!);
 
         // Act
         string result = manager.GetSavesDirectory(42);
@@ -38,7 +38,7 @@ public class InstanceManagerTests
     {
         // Arrange
         IConfiguration config = CreateConfig("/custom/host/path");
-        InstanceManager manager = new(config, new RconService(), null!);
+        InstanceManager manager = new(config, new(), null!);
 
         // Act
         string result = manager.GetModsDirectory(99);
@@ -53,7 +53,7 @@ public class InstanceManagerTests
     {
         // Arrange
         IConfiguration config = CreateConfig("/custom/host/path");
-        InstanceManager manager = new(config, new RconService(), null!);
+        InstanceManager manager = new(config, new(), null!);
 
         // Act
         bool isRunning = manager.IsRunning(9999);

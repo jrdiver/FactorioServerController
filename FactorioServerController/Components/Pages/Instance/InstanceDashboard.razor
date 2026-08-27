@@ -1,16 +1,16 @@
+@using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
-@using FactorioLibrary.Data
 @using Microsoft.EntityFrameworkCore
 @inject InstanceManager InstanceManager
 @inject AppDbContext DbContext
-@inject IJSRuntime JSRuntime
+@inject IJSRuntime JsRuntime
 @implements IDisposable
 
 <div class="glass-card mb-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h4><i class="bi bi-activity me-2"></i>Live Dashboard</h4>
-        @if (Stats?.IsOnline == true)
+        @if (stats?.IsOnline == true)
         {
             <span class="badge bg-success">Online</span>
         }
@@ -20,14 +20,14 @@
         }
     </div>
 
-    @if (Instance == null || _isLoadingStats)
+    @if (instance == null || isLoadingStats)
     {
         <div class="text-center py-5">
             <div class="spinner-border text-primary" role="status"></div>
             <p class="mt-3 text-muted">Loading live stats...</p>
         </div>
     }
-    else if (Stats == null || !Stats.IsOnline)
+    else if (stats == null || !stats.IsOnline)
     {
         <div class="alert alert-secondary bg-dark border-secondary">
             <i class="bi bi-info-circle me-2"></i> Dashboard is only available while the server is running.
@@ -40,11 +40,11 @@
             <div class="col-md-6">
                 <div class="p-3 rounded bg-dark border border-secondary text-center h-100">
                     <h6 class="text-muted mb-3"><i class="bi bi-cpu me-2"></i>CPU Usage</h6>
-                    <h2 class="text-white mb-3">@Stats.CpuPercentage.ToString("F1")%</h2>
+                    <h2 class="text-white mb-3">@stats.CpuPercentage.ToString("F1")%</h2>
                     <div class="progress bg-secondary" style="height: 10px;">
-                        <div class="progress-bar @(Stats.CpuPercentage > 80 ? "bg-danger" : "bg-primary")" role="progressbar" style="width: @(Math.Min(100, Stats.CpuPercentage))%"></div>
+                        <div class="progress-bar @(stats.CpuPercentage > 80 ? "bg-danger" : "bg-primary")" role="progressbar" style="width: @(Math.Min(100, stats.CpuPercentage))%"></div>
                     </div>
-                    <small class="text-muted mt-2 d-block">(Average across @Stats.OnlineCpus cores)</small>
+                    <small class="text-muted mt-2 d-block">(Average across @stats.OnlineCpus cores)</small>
                 </div>
             </div>
 
@@ -52,10 +52,10 @@
             <div class="col-md-6">
                 <div class="p-3 rounded bg-dark border border-secondary text-center h-100">
                     <h6 class="text-muted mb-3"><i class="bi bi-memory me-2"></i>Memory Usage</h6>
-                    <h2 class="text-white mb-3">@Stats.RamUsageMb.ToString("F0") MB</h2>
+                    <h2 class="text-white mb-3">@stats.RamUsageMb.ToString("F0") MB</h2>
                     <div class="progress bg-secondary" style="height: 10px;">
-                        <div class="progress-bar @(Stats.RamUsageMb > (Stats.RamLimitMb * 0.8) ? "bg-danger" : "bg-info")" role="progressbar" 
-                             style="width: @(Stats.RamLimitMb > 0 ? Math.Min(100, (Stats.RamUsageMb / Stats.RamLimitMb) * 100) : 0)%"></div>
+                        <div class="progress-bar @(stats.RamUsageMb > (stats.RamLimitMb * 0.8) ? "bg-danger" : "bg-info")" role="progressbar" 
+                             style="width: @(stats.RamLimitMb > 0 ? Math.Min(100, (stats.RamUsageMb / stats.RamLimitMb) * 100) : 0)%"></div>
                     </div>
                 </div>
             </div>
@@ -64,13 +64,13 @@
         <!-- Online Players -->
         <div class="p-4 rounded bg-dark border border-secondary">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="m-0"><i class="bi bi-people-fill me-2"></i>Online Players (@Stats.OnlinePlayers.Count)</h5>
+                <h5 class="m-0"><i class="bi bi-people-fill me-2"></i>Online Players (@stats.OnlinePlayers.Count)</h5>
             </div>
             
-            @if (Stats.OnlinePlayers.Any())
+            @if (stats.OnlinePlayers.Any())
             {
                 <ul class="list-group list-group-flush bg-transparent">
-                    @foreach (string player in Stats.OnlinePlayers)
+                    @foreach (string player in stats.OnlinePlayers)
                     {
                         <li class="list-group-item bg-transparent text-white border-secondary px-0">
                             <i class="bi bi-person me-2 text-primary"></i>@player
@@ -90,24 +90,24 @@
     [Parameter]
     public int Id { get; set; }
 
-    private ServerInstance? Instance;
-    private ServerStats? Stats;
-    private PeriodicTimer? _timer;
-    private CancellationTokenSource _cts = new();
-    private bool _isLoadingStats = true;
+    private ServerInstance? instance;
+    private ServerStats? stats;
+    private PeriodicTimer? timer;
+    private CancellationTokenSource cts = new();
+    private bool isLoadingStats = true;
 
     protected override async Task OnInitializedAsync()
     {
-        Instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
+        instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
         
-        if (Instance != null)
+        if (instance != null)
         {
             // Initial fetch
-            Stats = await InstanceManager.GetLiveStatsAsync(Instance);
-            _isLoadingStats = false;
+            stats = await InstanceManager.GetLiveStatsAsync(instance);
+            isLoadingStats = false;
             
             // Start polling loop
-            _timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+            timer = new(TimeSpan.FromSeconds(3));
             _ = PollStatsAsync();
         }
     }
@@ -116,18 +116,18 @@
     {
         try
         {
-            while (await _timer!.WaitForNextTickAsync(_cts.Token))
+            while (await timer!.WaitForNextTickAsync(cts.Token))
             {
                 bool isHidden = false;
                 try
                 {
-                    isHidden = await JSRuntime.InvokeAsync<bool>("eval", "document.hidden");
+                    isHidden = await JsRuntime.InvokeAsync<bool>("eval", "document.hidden");
                 }
                 catch { }
 
-                if (!isHidden && Instance != null)
+                if (!isHidden && instance != null)
                 {
-                    Stats = await InstanceManager.GetLiveStatsAsync(Instance);
+                    stats = await InstanceManager.GetLiveStatsAsync(instance);
                     await InvokeAsync(StateHasChanged);
                 }
             }
@@ -140,8 +140,8 @@
 
     public void Dispose()
     {
-        _cts.Cancel();
-        _cts.Dispose();
-        _timer?.Dispose();
+        cts.Cancel();
+        cts.Dispose();
+        timer?.Dispose();
     }
 }

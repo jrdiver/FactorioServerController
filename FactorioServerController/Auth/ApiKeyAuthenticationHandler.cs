@@ -33,8 +33,8 @@ public class ApiKeyAuthenticationHandler(IOptionsMonitor<ApiKeyAuthenticationOpt
 
         Claim[] claims =
         [
-            new Claim(ClaimTypes.NameIdentifier, apiKeyRecord.UserId),
-            new Claim(ClaimTypes.Name, apiKeyRecord.User.UserName ?? "API_User"),
+            new(ClaimTypes.NameIdentifier, apiKeyRecord.UserId),
+            new(ClaimTypes.Name, apiKeyRecord.User.UserName ?? "API_User"),
         ];
 
         ClaimsIdentity identity = new(claims, Scheme.Name);

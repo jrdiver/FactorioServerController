@@ -2,9 +2,7 @@
 @using FactorioLibrary
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
-@using FactorioLibrary.Objects
 @using FactorioLibrary.Services
-@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
 @inject AppDbContext DbContext
@@ -13,7 +11,7 @@
 @inject FactorioWebApi WebApi
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<IdentityUser> UserManager
-@inject IJSRuntime JSRuntime
+@inject IJSRuntime JsRuntime
 @implements IDisposable
 
 <PageTitle>Dashboard</PageTitle>
@@ -33,16 +31,16 @@
         </AuthorizeView>
     </div>
 
-    @if (!string.IsNullOrEmpty(DashboardAlert))
+    @if (!string.IsNullOrEmpty(dashboardAlert))
     {
         <div class="alert alert-warning alert-dismissible fade show mb-4" role="alert">
             <i class="bi bi-exclamation-triangle-fill me-2"></i>
-            <strong>Notice:</strong> @DashboardAlert
-            <button type="button" class="btn-close" @onclick="() => DashboardAlert = null"></button>
+            <strong>Notice:</strong> @dashboardAlert
+            <button type="button" class="btn-close" @onclick="() => dashboardAlert = null"></button>
         </div>
     }
 
-    @if (Instances == null)
+    @if (instances == null)
     {
         <div class="d-flex justify-content-center mt-5">
             <div class="spinner-border text-accent" role="status">
@@ -50,7 +48,7 @@
             </div>
         </div>
     }
-    else if (!Instances.Any())
+    else if (!instances.Any())
     {
         <div class="glass-panel p-5 text-center mt-4">
             <i class="bi bi-hdd-network display-1 text-muted mb-3 d-block"></i>
@@ -66,7 +64,7 @@
     else
     {
         <div class="row row-cols-1 row-cols-lg-2 row-cols-xl-3 g-4">
-            @foreach (ServerInstance instance in Instances)
+            @foreach (ServerInstance instance in instances)
             {
                 bool isRunning = InstanceManager.IsRunning(instance.Id);
                 
@@ -81,7 +79,7 @@
                         
                         <div class="text-muted small mb-4 flex-grow-1">
                             <div class="mb-1"><i class="bi bi-hdd-fill me-2"></i>Port: <strong>@instance.Port</strong></div>
-                            @if (!_viewerStatus.GetValueOrDefault(instance.Id))
+                            @if (!viewerStatus.GetValueOrDefault(instance.Id))
                             {
                                 <div class="mb-1"><i class="bi bi-terminal-fill me-2"></i>RCON: <strong>@instance.RconPort</strong></div>
                             }
@@ -89,7 +87,7 @@
                         </div>
 
                         <div class="d-flex flex-wrap gap-2 mt-auto">
-                            @if (_viewerStatus.GetValueOrDefault(instance.Id))
+                            @if (viewerStatus.GetValueOrDefault(instance.Id))
                             {
                                 <button class="btn btn-glass-secondary flex-grow-1" disabled>
                                     <i class="bi bi-eye-fill me-1"></i> View Only
@@ -97,7 +95,7 @@
                             }
                             else if (isRunning)
                             {
-                                @if (_stoppingInstances.Contains(instance.Id))
+                                @if (stoppingInstances.Contains(instance.Id))
                                 {
                                     <button class="btn btn-glass-secondary flex-grow-1 text-danger" disabled>
                                         <span class="spinner-border spinner-border-sm me-1"></span> Stopping...
@@ -112,7 +110,7 @@
                             }
                             else
                             {
-                                @if (_startingInstances.Contains(instance.Id))
+                                @if (startingInstances.Contains(instance.Id))
                                 {
                                     <button class="btn btn-glass flex-grow-1" disabled>
                                         <span class="spinner-border spinner-border-sm me-1"></span> Starting...
@@ -138,19 +136,19 @@
 </div>
 
 @code {
-    private List<ServerInstance>? Instances;
-    private List<DockerTagInfo> AvailableVersions = new();
-    private HashSet<int> _startingInstances = new();
-    private HashSet<int> _stoppingInstances = new();
-    private Dictionary<int, bool> _viewerStatus = new();
-    private PeriodicTimer? _timer;
-    private CancellationTokenSource _cts = new();
-    private string? DashboardAlert;
+    private List<ServerInstance>? instances;
+    private List<DockerTagInfo> availableVersions = new();
+    private HashSet<int> startingInstances = new();
+    private HashSet<int> stoppingInstances = new();
+    private Dictionary<int, bool> viewerStatus = new();
+    private PeriodicTimer? timer;
+    private CancellationTokenSource cts = new();
+    private string? dashboardAlert;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadInstances();
-        _timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        timer = new(TimeSpan.FromSeconds(2));
         _ = PollStatusAsync();
     }
 
@@ -158,12 +156,12 @@
     {
         try
         {
-            while (await _timer!.WaitForNextTickAsync(_cts.Token))
+            while (await timer!.WaitForNextTickAsync(cts.Token))
             {
                 bool isHidden = false;
                 try
                 {
-                    isHidden = await JSRuntime.InvokeAsync<bool>("eval", "document.hidden");
+                    isHidden = await JsRuntime.InvokeAsync<bool>("eval", "document.hidden");
                 }
                 catch { }
 
@@ -183,7 +181,7 @@
         
         if (user == null)
         {
-            Instances = new();
+            instances = new();
             return;
         }
 
@@ -191,85 +189,85 @@
 
         if (isAdmin)
         {
-            Instances = await DbContext.ServerInstances.ToListAsync();
-            foreach(var instance in Instances)
+            instances = await DbContext.ServerInstances.ToListAsync();
+            foreach(ServerInstance instance in instances)
             {
-                _viewerStatus[instance.Id] = false;
+                viewerStatus[instance.Id] = false;
             }
         }
         else
         {
-            var accesses = await DbContext.UserServerAccesses
+            List<UserServerAccess> accesses = await DbContext.UserServerAccesses
                 .Where(usa => usa.UserId == user.Id)
                 .ToListAsync();
                 
             List<int> allowedServerIds = accesses.Select(usa => usa.ServerInstanceId).ToList();
                 
-            Instances = await DbContext.ServerInstances
+            instances = await DbContext.ServerInstances
                 .Where(s => allowedServerIds.Contains(s.Id))
                 .ToListAsync();
                 
-            foreach(var instance in Instances)
+            foreach(ServerInstance instance in instances)
             {
-                var access = accesses.FirstOrDefault(a => a.ServerInstanceId == instance.Id);
-                _viewerStatus[instance.Id] = access?.AccessLevel == ServerAccessLevel.Viewer;
+                UserServerAccess? access = accesses.FirstOrDefault(a => a.ServerInstanceId == instance.Id);
+                viewerStatus[instance.Id] = access?.AccessLevel == ServerAccessLevel.Viewer;
             }
         }
         
         try
         {
-            AvailableVersions = await WebApi.GetDockerTagsAsync();
+            availableVersions = await WebApi.GetDockerTagsAsync();
         }
         catch
         {
-            AvailableVersions = new();
+            availableVersions = new();
         }
     }
 
     private string GetVersionDisplayName(string? tag)
     {
-        if (string.IsNullOrEmpty(tag) || tag == "latest") return AvailableVersions.FirstOrDefault(v => v.Tag == "latest")?.DisplayName ?? "Latest";
-        if (tag == "stable") return AvailableVersions.FirstOrDefault(v => v.Tag == "stable")?.DisplayName ?? "Stable";
+        if (string.IsNullOrEmpty(tag) || tag == "latest") return availableVersions.FirstOrDefault(v => v.Tag == "latest")?.DisplayName ?? "Latest";
+        if (tag == "stable") return availableVersions.FirstOrDefault(v => v.Tag == "stable")?.DisplayName ?? "Stable";
         
-        var info = AvailableVersions.FirstOrDefault(v => v.Tag == tag);
+        DockerTagInfo? info = availableVersions.FirstOrDefault(v => v.Tag == tag);
         return info?.DisplayName ?? tag;
     }
 
     private async Task StartInstance(ServerInstance instance)
     {
-        DashboardAlert = null; // Clear previous alerts
-        _startingInstances.Add(instance.Id);
+        dashboardAlert = null; // Clear previous alerts
+        startingInstances.Add(instance.Id);
         StateHasChanged();
         
-        var result = await InstanceManager.StartInstanceAsync(instance);
+        (bool Success, bool CleanedCorruptSave) result = await InstanceManager.StartInstanceAsync(instance);
         
         if (result.CleanedCorruptSave)
         {
-            DashboardAlert = $"A corrupted .tmp.zip save file was automatically detected and deleted while starting {instance.Name} to prevent a boot crash.";
+            dashboardAlert = $"A corrupted .tmp.zip save file was automatically detected and deleted while starting {instance.Name} to prevent a boot crash.";
         }
         
-        _startingInstances.Remove(instance.Id);
+        startingInstances.Remove(instance.Id);
         StateHasChanged();
     }
 
     private async Task StopInstance(int instanceId)
     {
-        _stoppingInstances.Add(instanceId);
+        stoppingInstances.Add(instanceId);
         StateHasChanged();
         
         await InstanceManager.StopInstanceAsync(instanceId);
         
-        _stoppingInstances.Remove(instanceId);
+        stoppingInstances.Remove(instanceId);
         StateHasChanged();
     }
 
     private async Task CreateNewInstance()
     {
-        ServerInstance newInstance = new ServerInstance
+        ServerInstance newInstance = new()
         {
-            Name = $"Factorio Server #{Instances?.Count + 1 ?? 1}",
-            Port = 34197 + (Instances?.Count ?? 0),
-            RconPort = 27015 + (Instances?.Count ?? 0),
+            Name = $"Factorio Server #{instances?.Count + 1 ?? 1}",
+            Port = 34197 + (instances?.Count ?? 0),
+            RconPort = 27015 + (instances?.Count ?? 0),
             RconPassword = Guid.NewGuid().ToString("N").Substring(0, 8)
         };
 
@@ -281,8 +279,8 @@
 
     public void Dispose()
     {
-        _cts.Cancel();
-        _cts.Dispose();
-        _timer?.Dispose();
+        cts.Cancel();
+        cts.Dispose();
+        timer?.Dispose();
     }
 }
