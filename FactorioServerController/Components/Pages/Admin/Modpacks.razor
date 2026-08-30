@@ -105,7 +105,7 @@
 
     private string? uploadProgress;
 
-    private async Task UploadModpack(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
+    private async Task UploadModpack(InputFileChangeEventArgs e)
     {
         IReadOnlyList<IBrowserFile> files = e.GetMultipleFiles(50);
         if (!files.Any()) return;
@@ -139,7 +139,7 @@
 
                     string jsonContent;
                     await using (Stream jsonStream = rawJsonFile.OpenReadStream(1024 * 1024 * 10))
-                    using (StreamReader reader = new StreamReader(jsonStream))
+                    using (StreamReader reader = new(jsonStream))
                     {
                         jsonContent = await reader.ReadToEndAsync();
                     }
@@ -148,7 +148,7 @@
                     if (rawDatFile != null)
                     {
                         await using Stream datStream = rawDatFile.OpenReadStream(1024 * 1024 * 50);
-                        using MemoryStream datMs = new MemoryStream();
+                        using MemoryStream datMs = new();
                         await datStream.CopyToAsync(datMs);
                         datContent = datMs.ToArray();
                     }
@@ -159,7 +159,7 @@
                         string factorioVersion = await Js.InvokeAsync<string>("prompt", $"Enter the target Factorio version for '{modpackName}' (e.g. 2.0 or latest):", "latest");
                         if (string.IsNullOrWhiteSpace(factorioVersion)) factorioVersion = "latest";
 
-                        Modpack modpack = new Modpack
+                        Modpack modpack = new()
                         {
                             Name = modpackName,
                             TargetFactorioVersion = factorioVersion,
@@ -186,11 +186,11 @@
                 await Task.Delay(1);
 
                 await using Stream stream = file.OpenReadStream(1024 * 1024 * 100); // 100MB max
-                using MemoryStream ms = new MemoryStream();
+                using MemoryStream ms = new();
                 await stream.CopyToAsync(ms);
                 ms.Position = 0;
 
-                await using ZipArchive archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Read);
+                await using ZipArchive archive = new(ms, ZipArchiveMode.Read);
                 
                 ZipArchiveEntry? modListEntry = archive.Entries.FirstOrDefault(entry => entry.Name.Equals("mod-list.json", StringComparison.OrdinalIgnoreCase));
                 ZipArchiveEntry? modSettingsEntry = archive.Entries.FirstOrDefault(entry => entry.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
@@ -204,7 +204,7 @@
 
                 string jsonContent;
                 await using (Stream jsonStream = modListEntry.Open())
-                using (StreamReader reader = new StreamReader(jsonStream))
+                using (StreamReader reader = new(jsonStream))
                 {
                     jsonContent = await reader.ReadToEndAsync();
                 }
@@ -213,7 +213,7 @@
                 if (modSettingsEntry != null)
                 {
                     await using Stream datStream = modSettingsEntry.Open();
-                    using MemoryStream datMs = new MemoryStream();
+                    using MemoryStream datMs = new();
                     await datStream.CopyToAsync(datMs);
                     datContent = datMs.ToArray();
                 }
@@ -228,7 +228,7 @@
                 string factorioVersion = await Js.InvokeAsync<string>("prompt", $"Enter the target Factorio version for '{modpackName}' (e.g. 2.0 or latest):", "latest");
                 if (string.IsNullOrWhiteSpace(factorioVersion)) factorioVersion = "latest";
 
-                Modpack modpack = new Modpack
+                Modpack modpack = new()
                 {
                     Name = modpackName,
                     TargetFactorioVersion = factorioVersion,

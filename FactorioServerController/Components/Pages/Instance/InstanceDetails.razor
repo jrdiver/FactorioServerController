@@ -724,7 +724,7 @@ else
         }
     }
 
-    private async Task OnBeforeInternalNavigation(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
+    private async Task OnBeforeInternalNavigation(LocationChangingContext context)
     {
         if (isUploading)
         {
@@ -748,7 +748,8 @@ else
 
             DirectoryInfo dirInfo = new(savesDir);
 
-            hasCorruptedTempSave = dirInfo.GetFiles("*.tmp.zip").Any();
+            // Factorio writes to .tmp.zip during auto-saves and normal shutdowns so slight delay to avoid flagging those. 
+            hasCorruptedTempSave = dirInfo.GetFiles("*.tmp.zip").Any(f => (DateTime.UtcNow - f.LastWriteTimeUtc).TotalSeconds > 60);
 
             saveFiles = dirInfo.GetFiles("*.zip")
                             .Where(f => !f.Name.EndsWith(".tmp.zip", StringComparison.OrdinalIgnoreCase))
@@ -770,7 +771,7 @@ else
 
     private async Task UploadSaveFile(InputFileChangeEventArgs e)
     {
-        Microsoft.AspNetCore.Components.Forms.IBrowserFile file = e.File;
+        IBrowserFile file = e.File;
         if (file == null) return;
         if (!file.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
         {
@@ -899,7 +900,7 @@ else
             if (entry != null)
             {
                 using Stream stream = entry.Open();
-                using System.IO.BinaryReader reader = new(stream);
+                using BinaryReader reader = new(stream);
                 ushort major = reader.ReadUInt16();
                 ushort minor = reader.ReadUInt16();
                 ushort patch = reader.ReadUInt16();
@@ -971,10 +972,10 @@ else
             File.Move(tempZipPath, targetZipPath);
 
             // Fetch max backups setting and apply retention
-            FactorioLibrary.Models.GlobalSettings settings = GlobalSettingsService.GetSettings();
+            GlobalSettings settings = GlobalSettingsService.GetSettings();
             if (settings.MaxServerBackups > 0)
             {
-                var allBackups = Directory.GetFiles(backupsDir, "*.zip")
+                List<FileInfo> allBackups = Directory.GetFiles(backupsDir, "*.zip")
                     .Select(f => new FileInfo(f))
                     .OrderBy(f => f.CreationTimeUtc)
                     .ToList();
@@ -982,7 +983,7 @@ else
                 int overage = allBackups.Count - settings.MaxServerBackups;
                 if (overage > 0)
                 {
-                    foreach (var oldBackup in allBackups.Take(overage))
+                    foreach (FileInfo oldBackup in allBackups.Take(overage))
                     {
                         try { oldBackup.Delete(); } catch { }
                     }
@@ -998,9 +999,9 @@ else
         }
     }
 
-    private async Task UploadBackup(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
+    private async Task UploadBackup(InputFileChangeEventArgs e)
     {
-        var file = e.File;
+        IBrowserFile? file = e.File;
         if (file == null || !file.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return;
 
         isUploadingBackup = true;

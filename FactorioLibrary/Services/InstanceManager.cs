@@ -167,9 +167,9 @@ public class InstanceManager
             {
                 string localDataPath = GetLocalDataPath(instance.Id);
 
-                string configPath = System.IO.Path.Combine(localDataPath, "config");
-                System.IO.Directory.CreateDirectory(configPath);
-                await System.IO.File.WriteAllTextAsync(System.IO.Path.Combine(configPath, "rconpw"), instance.RconPassword);
+                string configPath = Path.Combine(localDataPath, "config");
+                Directory.CreateDirectory(configPath);
+                await File.WriteAllTextAsync(Path.Combine(configPath, "rconpw"), instance.RconPassword);
             }
             catch (Exception ex)
             {
@@ -454,8 +454,8 @@ public class InstanceManager
 
             // ALWAYS check global_mods for any missing files after a sync (or during a failure to fix dependencies)
             using IServiceScope scope = scopeFactory.CreateScope();
-            ModManager modManager = scope.ServiceProvider.GetRequiredService<FactorioLibrary.Services.ModManager>();
-            var globalMods = modManager.GetGlobalMods();
+            ModManager modManager = scope.ServiceProvider.GetRequiredService<ModManager>();
+            List<LocalModInfo> globalMods = modManager.GetGlobalMods();
             await ResolveMissingModsFromGlobalAsync(instanceId, globalMods);
             
             if (!success && retryCount < 5)
@@ -481,14 +481,14 @@ public class InstanceManager
 
         string modListContent = await File.ReadAllTextAsync(modListPath);
         
-        var matchingMods = globalMods.Where(m => modListContent.Contains($"\"{m.Name}\"")).ToList();
+        List<LocalModInfo> matchingMods = globalMods.Where(m => modListContent.Contains($"\"{m.Name}\"")).ToList();
 
         int total = matchingMods.Count;
         int current = 0;
 
         string globalPath = Path.Combine(internalDataPath, "global_mods");
 
-        foreach (var mod in matchingMods)
+        foreach (LocalModInfo mod in matchingMods)
         {
             current++;
             string targetFile = Path.Combine(targetModsDir, mod.FileName);

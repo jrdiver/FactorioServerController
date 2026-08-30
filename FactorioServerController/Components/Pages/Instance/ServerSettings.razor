@@ -50,14 +50,14 @@
         }
 
         <div class="glass-panel p-4">
-            <ul class="nav nav-tabs border-secondary mb-4" id="settingsTabs" role="tablist">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link @(activeTab == "friendly" ? "active" : "") bg-transparent border-0 text-@(activeTab == "friendly" ? "accent fw-bold" : "muted")" @onclick="@(() => SwitchTab("friendly"))">Friendly Form</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link @(activeTab == "raw" ? "active" : "") bg-transparent border-0 text-@(activeTab == "raw" ? "accent fw-bold" : "muted")" @onclick="@(() => SwitchTab("raw"))">Raw JSON</button>
-                </li>
-            </ul>
+            <div class="d-flex border-bottom border-secondary mb-4 gap-2 align-items-end" id="settingsTabs">
+                <button class="bg-transparent text-@(activeTab == "friendly" ? "accent fw-bold" : "muted")" 
+                        style="border: none; border-bottom: 2px solid @(activeTab == "friendly" ? "var(--bs-warning)" : "transparent"); margin-bottom: -1px; padding: 0.5rem 1rem;" 
+                        @onclick="@(() => SwitchTab("friendly"))">Friendly Form</button>
+                <button class="bg-transparent text-@(activeTab == "raw" ? "accent fw-bold" : "muted")" 
+                        style="border: none; border-bottom: 2px solid @(activeTab == "raw" ? "var(--bs-warning)" : "transparent"); margin-bottom: -1px; padding: 0.5rem 1rem;" 
+                        @onclick="@(() => SwitchTab("raw"))">Raw JSON</button>
+            </div>
 
             <div class="tab-content">
                 @if (activeTab == "friendly")

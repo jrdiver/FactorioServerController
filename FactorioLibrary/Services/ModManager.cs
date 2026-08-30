@@ -40,7 +40,7 @@ public class ModManager(GlobalSettingsService settingsService, InstanceManager i
         string cachePath = Path.Combine(GetGlobalModsPath(), "mod-cache.json");
         try
         {
-            JsonSerializerOptions options = new JsonSerializerOptions { WriteIndented = true };
+            JsonSerializerOptions options = new() { WriteIndented = true };
             string json = JsonSerializer.Serialize(modCache, options);
             await File.WriteAllTextAsync(cachePath, json);
         }
@@ -67,7 +67,7 @@ public class ModManager(GlobalSettingsService settingsService, InstanceManager i
             if (response.IsSuccessStatusCode)
             {
                 string json = await response.Content.ReadAsStringAsync();
-                JsonSerializerOptions options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                JsonSerializerOptions options = new() { PropertyNameCaseInsensitive = true };
                 info = JsonSerializer.Deserialize<ModInfo>(json, options);
             }
 
