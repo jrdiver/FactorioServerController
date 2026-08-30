@@ -5,7 +5,8 @@ namespace FactorioLibrary.Models;
 public enum ServerAccessLevel
 {
     Viewer = 0,
-    Admin = 1
+    Admin = 1,
+    ViewerWithDownload = 2
 }
 
 public class UserServerAccess

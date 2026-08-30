@@ -163,7 +163,7 @@ else
                 Navigation.NavigateTo("/");
                 return;
             }
-            isViewer = access.AccessLevel == ServerAccessLevel.Viewer;
+            isViewer = access.AccessLevel == ServerAccessLevel.Viewer || access.AccessLevel == ServerAccessLevel.ViewerWithDownload;
         }
 
         instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);

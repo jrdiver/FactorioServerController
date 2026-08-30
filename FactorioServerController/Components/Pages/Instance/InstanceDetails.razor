@@ -12,6 +12,7 @@
 @inject IJSRuntime JsRuntime
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<IdentityUser> UserManager
+@inject GlobalSettingsService GlobalSettingsService
 @implements IDisposable
 
 <script>
@@ -265,9 +266,12 @@ else
                                                         </button>
                                                     }
                                                 }
-                                                <a href="/api/instances/@Id/saves/@Uri.EscapeDataString(save.Name)" download class="btn btn-sm btn-glass-secondary me-2" title="Download">
-                                                    <i class="bi bi-download"></i>
-                                                </a>
+                                                @if (canDownload)
+                                                {
+                                                    <a href="/api/instances/@Id/saves/@Uri.EscapeDataString(save.Name)" download class="btn btn-sm btn-glass-secondary me-2" title="Download">
+                                                        <i class="bi bi-download"></i>
+                                                    </a>
+                                                }
                                                 @if (!isViewer)
                                                 {
                                                     <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteSaveFile(save.Name)" title="Delete">
@@ -290,6 +294,110 @@ else
                             {
                                 <span>The Factorio server is locked to load <strong class="text-white">@instance.ActiveSaveName</strong> when it starts.</span>
                             }
+                        </div>
+                    }
+                </div>
+
+                <div class="glass-card mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h4 class="mb-0"><i class="bi bi-archive me-2"></i>Full Server Backups</h4>
+                        <div class="d-flex align-items-center gap-3">
+                            @if (maxBackups > 0)
+                            {
+                                <span class="badge bg-secondary">Max @maxBackups</span>
+                            }
+                            @if (!isViewer)
+                            {
+                                <InputFile OnChange="UploadBackup" class="d-none" id="backupUpload" accept=".zip" />
+                                <button class="btn btn-glass-secondary" type="button" onclick="document.getElementById('backupUpload').click()" disabled="@(isBackingUp || isUploadingBackup)" title="Upload Backup">
+                                    @if (isUploadingBackup)
+                                    {
+                                        <span class="spinner-border spinner-border-sm"></span> <span class="small">@backupUploadProgress%</span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-upload"></i>
+                                    }
+                                </button>
+                                <button class="btn btn-glass-secondary" @onclick="CreateBackup" disabled="@(isBackingUp || isUploadingBackup)">
+                                    @if (isBackingUp)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2"></span><span>Backing up...</span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-plus-lg me-2"></i><span>Create Backup</span>
+                                    }
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    @if (backupFiles == null)
+                    {
+                        <div class="text-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span> Loading backups...</div>
+                    }
+                    else if (!backupFiles.Any())
+                    {
+                        <div class="text-center text-muted my-4">
+                            <i class="bi bi-archive display-4 mb-3 d-block"></i>
+                            No backups found for this instance.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover table-borderless align-middle mb-0">
+                                <thead class="border-bottom border-secondary">
+                                    <tr>
+                                        <th class="text-muted">Filename</th>
+                                        <th class="text-muted">Created</th>
+                                        <th class="text-muted text-end">Size</th>
+                                        <th class="text-end">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (BackupFileInfo backup in backupFiles)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <i class="bi bi-file-zip text-accent me-2"></i>
+                                                <span class="text-white">@backup.Name</span>
+                                            </td>
+                                            <td class="text-muted local-time" data-utc="@backup.Created.ToString("O")" title="@backup.Created.ToString("MMM dd, yyyy h:mm tt 'UTC'")">
+                                                @GetFriendlyTime(backup.Created)
+                                            </td>
+                                            <td class="text-muted text-end">@FormatBytes(backup.SizeBytes)</td>
+                                            <td class="text-end">
+                                                @if (canDownload)
+                                                {
+                                                    @if (isBackingUp || isUploadingBackup)
+                                                    {
+                                                        <button class="btn btn-sm btn-glass-secondary me-2" disabled title="Operation in progress...">
+                                                            <i class="bi bi-download"></i>
+                                                        </button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <a href="/api/instances/@Id/backups/@Uri.EscapeDataString(backup.Name)" download class="btn btn-sm btn-glass-secondary me-2" title="Download">
+                                                            <i class="bi bi-download"></i>
+                                                        </a>
+                                                    }
+                                                }
+                                                @if (!isViewer)
+                                                {
+                                                    <button class="btn btn-sm btn-glass-secondary text-warning me-2" @onclick="() => RestoreBackup(backup.Name)" title="Restore (Wipe and replace current)" disabled="@(isBackingUp || isUploadingBackup)">
+                                                        <i class="bi bi-arrow-counterclockwise"></i>
+                                                    </button>
+                                                    <button class="btn btn-sm btn-glass-secondary text-danger" @onclick="() => DeleteBackup(backup.Name)" title="Delete" disabled="@(isBackingUp || isUploadingBackup)">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
                         </div>
                     }
                 </div>
@@ -406,6 +514,20 @@ else
     private bool hasCorruptedTempSave;
     private bool isViewer;
 
+    private bool canDownload;
+    private bool isBackingUp => InstanceManager.IsBackingUp(Id);
+    private bool isUploadingBackup;
+    private int backupUploadProgress;
+    private List<BackupFileInfo>? backupFiles;
+    private int maxBackups;
+    
+    private class BackupFileInfo
+    {
+        public string Name { get; set; } = "";
+        public DateTime Created { get; set; }
+        public long SizeBytes { get; set; }
+    }
+
     private class SaveFileInfo
     {
         public string Name { get; set; } = "";
@@ -419,6 +541,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        maxBackups = GlobalSettingsService.GetSettings().MaxServerBackups;
+
         AuthenticationState authState = await AuthStateProvider.GetAuthenticationStateAsync();
         IdentityUser? user = await UserManager.GetUserAsync(authState.User);
 
@@ -437,7 +561,12 @@ else
                 Navigation.NavigateTo("/");
                 return;
             }
-            isViewer = access.AccessLevel == ServerAccessLevel.Viewer;
+            isViewer = access.AccessLevel == ServerAccessLevel.Viewer || access.AccessLevel == ServerAccessLevel.ViewerWithDownload;
+            canDownload = access.AccessLevel != ServerAccessLevel.Viewer;
+        }
+        else
+        {
+            canDownload = true;
         }
 
         instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
@@ -448,6 +577,7 @@ else
         }
 
         LoadSaveFiles();
+        LoadBackupFiles();
 
         try
         {
@@ -484,6 +614,8 @@ else
 
                 if (!isHidden)
                 {
+                    LoadSaveFiles();
+                    LoadBackupFiles();
                     await InvokeAsync(StateHasChanged);
                 }
             }
@@ -780,6 +912,196 @@ else
             // Ignore extraction errors
         }
         return "";
+    }
+
+    private void LoadBackupFiles()
+    {
+        string backupsDir = InstanceManager.GetBackupsDirectory(Id);
+        if (Directory.Exists(backupsDir))
+        {
+            // Only load completed zips (not .tmp files)
+            backupFiles = Directory.GetFiles(backupsDir, "*.zip")
+                .Select(f => new FileInfo(f))
+                .Select(fi => new BackupFileInfo
+                {
+                    Name = fi.Name,
+                    Created = fi.CreationTimeUtc,
+                    SizeBytes = fi.Length
+                })
+                .OrderByDescending(x => x.Created)
+                .ToList();
+        }
+        else
+        {
+            backupFiles = new();
+        }
+    }
+
+    private async Task CreateZipArchive(string targetZipPath)
+    {
+        string instanceDir = InstanceManager.GetLocalDataPath(Id);
+        string metaPath = Path.Combine(instanceDir, "server-meta.json");
+        string metaJson = System.Text.Json.JsonSerializer.Serialize(instance, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(metaPath, metaJson);
+
+        if (File.Exists(targetZipPath)) File.Delete(targetZipPath);
+
+        await Task.Run(() => {
+            System.IO.Compression.ZipFile.CreateFromDirectory(instanceDir, targetZipPath, System.IO.Compression.CompressionLevel.Fastest, false);
+        });
+
+        File.Delete(metaPath);
+    }
+
+    private async Task CreateBackup()
+    {
+        if (isBackingUp) return;
+        
+        InstanceManager.SetBackingUp(Id, true);
+        StateHasChanged();
+
+        try
+        {
+            string backupsDir = InstanceManager.GetBackupsDirectory(Id);
+            string backupName = $"backup_{DateTime.UtcNow:yyyyMMdd_HHmmss}.zip";
+            string tempZipPath = Path.Combine(backupsDir, backupName + ".tmp");
+            string targetZipPath = Path.Combine(backupsDir, backupName);
+            
+            await CreateZipArchive(tempZipPath);
+            File.Move(tempZipPath, targetZipPath);
+
+            // Fetch max backups setting and apply retention
+            FactorioLibrary.Models.GlobalSettings settings = GlobalSettingsService.GetSettings();
+            if (settings.MaxServerBackups > 0)
+            {
+                var allBackups = Directory.GetFiles(backupsDir, "*.zip")
+                    .Select(f => new FileInfo(f))
+                    .OrderBy(f => f.CreationTimeUtc)
+                    .ToList();
+
+                int overage = allBackups.Count - settings.MaxServerBackups;
+                if (overage > 0)
+                {
+                    foreach (var oldBackup in allBackups.Take(overage))
+                    {
+                        try { oldBackup.Delete(); } catch { }
+                    }
+                }
+            }
+
+            LoadBackupFiles();
+        }
+        finally
+        {
+            InstanceManager.SetBackingUp(Id, false);
+            StateHasChanged();
+        }
+    }
+
+    private async Task UploadBackup(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null || !file.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return;
+
+        isUploadingBackup = true;
+        backupUploadProgress = 0;
+        StateHasChanged();
+
+        try
+        {
+            string backupsDir = InstanceManager.GetBackupsDirectory(Id);
+            string safeName = Path.GetFileName(file.Name);
+            string targetPath = Path.Combine(backupsDir, safeName);
+
+            // Avoid overwriting by appending timestamp if it exists
+            if (File.Exists(targetPath))
+            {
+                string nameWithoutExt = Path.GetFileNameWithoutExtension(safeName);
+                safeName = $"{nameWithoutExt}_{DateTime.UtcNow.Ticks}.zip";
+                targetPath = Path.Combine(backupsDir, safeName);
+            }
+
+            using (FileStream fs = new(targetPath, FileMode.Create))
+            {
+                using Stream readStream = file.OpenReadStream(10L * 1024 * 1024 * 1024); // 10GB max
+                byte[] buffer = new byte[81920];
+                int bytesRead;
+                long totalRead = 0;
+                while ((bytesRead = await readStream.ReadAsync(buffer)) > 0)
+                {
+                    await fs.WriteAsync(buffer.AsMemory(0, bytesRead));
+                    totalRead += bytesRead;
+                    backupUploadProgress = (int)((totalRead * 100) / file.Size);
+                    StateHasChanged();
+                }
+            }
+
+            LoadBackupFiles();
+        }
+        finally
+        {
+            isUploadingBackup = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeleteBackup(string name)
+    {
+        bool isConfirmed = await JsRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to permanently delete the backup '{name}'?");
+        if (!isConfirmed) return;
+
+        string filePath = Path.Combine(InstanceManager.GetBackupsDirectory(Id), name);
+        if (File.Exists(filePath))
+        {
+            File.Delete(filePath);
+            LoadBackupFiles();
+        }
+    }
+
+    private async Task RestoreBackup(string name)
+    {
+        if (isBackingUp) return;
+
+        bool isConfirmed = await JsRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to restore {name}? This will completely replace your current saves, mods, and configurations with the backup!");
+        if (!isConfirmed) return;
+
+        InstanceManager.SetBackingUp(Id, true);
+        StateHasChanged();
+
+        try
+        {
+            // Stop server first
+            if (InstanceManager.IsRunning(Id))
+                await InstanceManager.StopInstanceAsync(Id);
+
+            string filePath = Path.Combine(InstanceManager.GetBackupsDirectory(Id), name);
+            if (!File.Exists(filePath)) return;
+
+            string instanceDir = InstanceManager.GetLocalDataPath(Id);
+            
+            // Delete all contents of instanceDir EXCEPT the backups directory
+            foreach (string dir in Directory.GetDirectories(instanceDir))
+            {
+                if (Path.GetFileName(dir) == "backups") continue;
+                Directory.Delete(dir, true);
+            }
+            foreach (string file in Directory.GetFiles(instanceDir))
+            {
+                File.Delete(file);
+            }
+
+            // Extract backup
+            System.IO.Compression.ZipFile.ExtractToDirectory(filePath, instanceDir, true);
+
+            // Reload state
+            instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
+            LoadSaveFiles();
+        }
+        finally
+        {
+            InstanceManager.SetBackingUp(Id, false);
+            StateHasChanged();
+        }
     }
 
     public void Dispose()

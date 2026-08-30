@@ -7,4 +7,5 @@ public class GlobalSettings
     public string FactorioUsername { get; set; } = string.Empty;
     public string FactorioToken { get; set; } = string.Empty;
     public int ShutdownTimeoutSeconds { get; set; } = 60;
+    public int MaxServerBackups { get; set; } = 0; // 0 means unlimited
 }

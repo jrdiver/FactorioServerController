@@ -242,7 +242,7 @@
                 Navigation.NavigateTo("/");
                 return;
             }
-            if (access.AccessLevel == ServerAccessLevel.Viewer)
+            if (access.AccessLevel == ServerAccessLevel.Viewer || access.AccessLevel == ServerAccessLevel.ViewerWithDownload)
             {
                 Navigation.NavigateTo($"/instance/{Id}");
                 return;

@@ -22,6 +22,9 @@ public class InstanceManager
     // Maps instance ID to Docker Container ID
     private readonly ConcurrentDictionary<int, string> runningContainers = new();
 
+    // Tracks instance IDs currently running a backup
+    private readonly ConcurrentDictionary<int, bool> activeBackups = new();
+
     // Cache stats for 2.5 seconds to prevent multiple clients from hammering Docker API
     private readonly ConcurrentDictionary<int, (DateTime FetchedAt, ServerStats Stats)> statsCache = new();
     
@@ -62,8 +65,21 @@ public class InstanceManager
         _ = InitializeRunningContainersAsync();
     }
 
-    private string GetLocalDataPath(int instanceId) => Path.Combine(internalBaseMountPath, instanceId.ToString());
-    private string GetInstanceHostPath(int instanceId) => Path.Combine(hostBaseMountPath, instanceId.ToString());
+    public string GetLocalDataPath(int instanceId) => Path.Combine(internalBaseMountPath, instanceId.ToString());
+    public string GetInstanceHostPath(int instanceId) => Path.Combine(hostBaseMountPath, instanceId.ToString());
+    public string GetBackupsDirectory(int instanceId)
+    {
+        string path = Path.Combine(internalDataPath, "backups", instanceId.ToString());
+        if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+        return path;
+    }
+
+    public bool IsBackingUp(int instanceId) => activeBackups.ContainsKey(instanceId);
+    public void SetBackingUp(int instanceId, bool isBackingUp)
+    {
+        if (isBackingUp) activeBackups.TryAdd(instanceId, true);
+        else activeBackups.TryRemove(instanceId, out _);
+    }
 
     private async Task CheckContainerHealthAsync()
     {
@@ -437,7 +453,10 @@ public class InstanceManager
             bool success = !fullLog.Contains("Error", StringComparison.OrdinalIgnoreCase);
 
             // ALWAYS check global_mods for any missing files after a sync (or during a failure to fix dependencies)
-            await ResolveMissingModsFromGlobalAsync(instanceId);
+            using IServiceScope scope = scopeFactory.CreateScope();
+            ModManager modManager = scope.ServiceProvider.GetRequiredService<FactorioLibrary.Services.ModManager>();
+            var globalMods = modManager.GetGlobalMods();
+            await ResolveMissingModsFromGlobalAsync(instanceId, globalMods);
             
             if (!success && retryCount < 5)
             {
@@ -452,11 +471,8 @@ public class InstanceManager
         }
     }
 
-    public async Task ResolveMissingModsFromGlobalAsync(int instanceId, Action<int, int, string>? progressCallback = null)
+    public async Task ResolveMissingModsFromGlobalAsync(int instanceId, IEnumerable<LocalModInfo> globalMods, Action<int, int, string, long>? progressCallback = null)
     {
-        string globalPath = Path.Combine(internalDataPath, "global_mods");
-        if (!Directory.Exists(globalPath)) return;
-
         string targetModsDir = GetModsDirectory(instanceId);
         if (!Directory.Exists(targetModsDir)) Directory.CreateDirectory(targetModsDir);
 
@@ -464,37 +480,29 @@ public class InstanceManager
         if (!File.Exists(modListPath)) return;
 
         string modListContent = await File.ReadAllTextAsync(modListPath);
-        string[] globalZips = Directory.GetFiles(globalPath, "*.zip");
+        
+        var matchingMods = globalMods.Where(m => modListContent.Contains($"\"{m.Name}\"")).ToList();
 
-        List<string> matchingZips = new List<string>();
-        foreach (string zip in globalZips)
-        {
-            string zipName = Path.GetFileName(zip);
-            int lastUnderscore = zipName.LastIndexOf('_');
-            if (lastUnderscore > 0)
-            {
-                string modName = zipName.Substring(0, lastUnderscore);
-                if (modListContent.Contains($"\"{modName}\""))
-                {
-                    matchingZips.Add(zip);
-                }
-            }
-        }
-
-        int total = matchingZips.Count;
+        int total = matchingMods.Count;
         int current = 0;
 
-        foreach (string zip in matchingZips)
+        string globalPath = Path.Combine(internalDataPath, "global_mods");
+
+        foreach (var mod in matchingMods)
         {
             current++;
-            string zipName = Path.GetFileName(zip);
-            string targetFile = Path.Combine(targetModsDir, zipName);
+            string targetFile = Path.Combine(targetModsDir, mod.FileName);
 
-            progressCallback?.Invoke(current, total, zipName);
+            progressCallback?.Invoke(current, total, mod.FileName, mod.SizeBytes);
 
             if (!File.Exists(targetFile))
             {
-                try { File.Copy(zip, targetFile, true); } catch {}
+                try 
+                { 
+                    string globalFile = Path.Combine(globalPath, mod.FileName);
+                    File.Copy(globalFile, targetFile, true); 
+                } 
+                catch {}
             }
             
             if (progressCallback != null && current % 3 == 0)

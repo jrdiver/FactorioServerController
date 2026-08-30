@@ -191,7 +191,8 @@
                                         value="@accessStr"
                                         @onchange="(e) => SetAccessLevel(server.Id, e.Value?.ToString())">
                                     <option value="None">No Access</option>
-                                    <option value="Viewer">Viewer</option>
+                                    <option value="Viewer">Viewer (No Downloads)</option>
+                                    <option value="ViewerWithDownload">Viewer + Download</option>
                                     <option value="Admin">Admin</option>
                                 </select>
                             </div>

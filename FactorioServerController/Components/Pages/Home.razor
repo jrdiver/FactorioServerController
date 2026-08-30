@@ -24,7 +24,19 @@
         </div>
         <AuthorizeView Roles="Administrator">
             <Authorized>
-                <div class="col-auto">
+                <div class="col-auto d-flex gap-2">
+                    <InputFile OnChange="ImportInstance" class="d-none" id="importUpload" accept=".zip" />
+                    <button class="btn btn-glass-secondary" type="button" onclick="document.getElementById('importUpload').click()" disabled="@isImporting">
+                        @if (isImporting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <span>Importing... @importProgress%</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-box-arrow-in-down me-2"></i><span>Import Server</span>
+                        }
+                    </button>
                     <button class="btn btn-glass" @onclick="CreateNewInstance"><i class="bi bi-plus-lg me-2"></i>New Instance</button>
                 </div>
             </Authorized>
@@ -144,6 +156,9 @@
     private PeriodicTimer? timer;
     private CancellationTokenSource cts = new();
     private string? dashboardAlert;
+    
+    private bool isImporting;
+    private int importProgress;
 
     protected override async Task OnInitializedAsync()
     {
@@ -210,7 +225,7 @@
             foreach(ServerInstance instance in instances)
             {
                 UserServerAccess? access = accesses.FirstOrDefault(a => a.ServerInstanceId == instance.Id);
-                viewerStatus[instance.Id] = access?.AccessLevel == ServerAccessLevel.Viewer;
+                viewerStatus[instance.Id] = access?.AccessLevel == ServerAccessLevel.Viewer || access?.AccessLevel == ServerAccessLevel.ViewerWithDownload;
             }
         }
         
@@ -275,6 +290,95 @@
         await DbContext.SaveChangesAsync();
         
         Navigation.NavigateTo($"/instance/{newInstance.Id}");
+    }
+
+    private async Task ImportInstance(InputFileChangeEventArgs e)
+    {
+        Microsoft.AspNetCore.Components.Forms.IBrowserFile file = e.File;
+        if (file == null) return;
+        
+        isImporting = true;
+        importProgress = 0;
+        dashboardAlert = null;
+        StateHasChanged();
+        
+        try
+        {
+            string tempZipPath = System.IO.Path.GetTempFileName();
+            using (System.IO.FileStream fs = new(tempZipPath, System.IO.FileMode.Create))
+            {
+                using System.IO.Stream readStream = file.OpenReadStream(10L * 1024 * 1024 * 1024); // 10GB max
+                byte[] buffer = new byte[81920];
+                int bytesRead;
+                long totalRead = 0;
+                while ((bytesRead = await readStream.ReadAsync(buffer)) > 0)
+                {
+                    await fs.WriteAsync(buffer.AsMemory(0, bytesRead));
+                    totalRead += bytesRead;
+                    importProgress = (int)((totalRead * 100) / file.Size);
+                    StateHasChanged();
+                }
+            }
+            
+            string tempExtractPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"import_{DateTime.UtcNow.Ticks}");
+            System.IO.Directory.CreateDirectory(tempExtractPath);
+            System.IO.Compression.ZipFile.ExtractToDirectory(tempZipPath, tempExtractPath, true);
+            
+            ServerInstance newInstance = new();
+            
+            string metaPath = System.IO.Path.Combine(tempExtractPath, "server-meta.json");
+            if (System.IO.File.Exists(metaPath))
+            {
+                string metaJson = await System.IO.File.ReadAllTextAsync(metaPath);
+                try {
+                    ServerInstance? metaInstance = System.Text.Json.JsonSerializer.Deserialize<ServerInstance>(metaJson);
+                    if (metaInstance != null) {
+                        newInstance.Name = metaInstance.Name + " (Imported)";
+                        newInstance.AssignedVersion = metaInstance.AssignedVersion;
+                        newInstance.ActiveSaveName = metaInstance.ActiveSaveName;
+                    }
+                } catch {}
+            }
+            
+            if (string.IsNullOrEmpty(newInstance.Name))
+                newInstance.Name = $"Imported Server {DateTime.Now:yyyy-MM-dd}";
+                
+            int highestPort = await DbContext.ServerInstances.AnyAsync() ? await DbContext.ServerInstances.MaxAsync(x => x.Port) : 34197;
+            int highestRcon = await DbContext.ServerInstances.AnyAsync() ? await DbContext.ServerInstances.MaxAsync(x => x.RconPort) : 27015;
+            
+            newInstance.Port = highestPort + 1;
+            newInstance.RconPort = highestRcon + 1;
+            newInstance.RconPassword = Guid.NewGuid().ToString("N").Substring(0, 8);
+            
+            DbContext.ServerInstances.Add(newInstance);
+            await DbContext.SaveChangesAsync();
+            
+            string targetPath = InstanceManager.GetLocalDataPath(newInstance.Id);
+            System.IO.Directory.CreateDirectory(targetPath);
+            
+            foreach (string dirPath in System.IO.Directory.GetDirectories(tempExtractPath, "*", System.IO.SearchOption.AllDirectories))
+                System.IO.Directory.CreateDirectory(dirPath.Replace(tempExtractPath, targetPath));
+                
+            foreach (string newPath in System.IO.Directory.GetFiles(tempExtractPath, "*.*", System.IO.SearchOption.AllDirectories))
+            {
+                if (System.IO.Path.GetFileName(newPath) == "server-meta.json") continue;
+                System.IO.File.Copy(newPath, newPath.Replace(tempExtractPath, targetPath), true);
+            }
+            
+            try { System.IO.Directory.Delete(tempExtractPath, true); } catch {}
+            try { System.IO.File.Delete(tempZipPath); } catch {}
+            
+            Navigation.NavigateTo($"/instance/{newInstance.Id}");
+        }
+        catch (Exception ex)
+        {
+            dashboardAlert = $"Failed to import server: {ex.Message}";
+        }
+        finally
+        {
+            isImporting = false;
+            StateHasChanged();
+        }
     }
 
     public void Dispose()

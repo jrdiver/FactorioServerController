@@ -52,6 +52,12 @@
                             <div class="text-muted small mt-1">Maximum time to wait for a Factorio server to safely save its world and close before forcing it to stop. Highly modded servers may need more time. Default is 60.</div>
                         </div>
 
+                        <div class="mb-4">
+                            <label class="form-label text-muted">Maximum Server Backups</label>
+                            <input type="number" class="form-control bg-dark text-white border-secondary" @bind="appSettings.MaxServerBackups" min="0" max="100" />
+                            <div class="text-muted small mt-1">Maximum number of backups to keep per server. When a new backup is created, the oldest backups will be deleted if this limit is exceeded. Set to 0 for unlimited. Default is 0.</div>
+                        </div>
+
                         <h5 class="mt-4 mb-3 text-accent border-bottom border-secondary pb-2"><i class="bi bi-puzzle-fill me-2"></i>Factorio Mod Portal API</h5>
                         <p class="text-muted small mb-3">
                             These credentials are required to automatically download and update mods from the Factorio Mod Portal. You can generate a token in your factorio.com profile.

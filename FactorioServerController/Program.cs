@@ -121,7 +121,7 @@ app.MapAuthEndpoints();
 // Minimal API endpoint for downloading save files directly
 app.MapGet("/api/instances/{id:int}/saves/{filename}", async (int id, string filename, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
-    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
+    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false, true)) return Results.Forbid();
 
     // Sanitize filename to prevent directory traversal
     string safeFilename = Path.GetFileName(filename);
@@ -137,7 +137,7 @@ app.MapGet("/api/instances/{id:int}/saves/{filename}", async (int id, string fil
 // Minimal API endpoint for downloading individual mod files
 app.MapGet("/api/instances/{id:int}/mods/{filename}", async (int id, string filename, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
-    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
+    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false, true)) return Results.Forbid();
 
     string safeFilename = Path.GetFileName(filename);
     string modsDir = manager.GetModsDirectory(id);
@@ -152,7 +152,7 @@ app.MapGet("/api/instances/{id:int}/mods/{filename}", async (int id, string file
 // Minimal API endpoint for downloading all mods as a zip
 app.MapGet("/api/instances/{id:int}/mods/downloadAll", async (int id, InstanceManager manager, AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
 {
-    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false)) return Results.Forbid();
+    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false, true)) return Results.Forbid();
 
     string modsDir = manager.GetModsDirectory(id);
     if (!Directory.Exists(modsDir))
@@ -201,6 +201,21 @@ app.MapGet("/api/instances", async (AppDbContext db, InstanceManager manager, Us
         AccessLevel = isGlobalAdmin ? "Admin" : accessList?.FirstOrDefault(a => a.ServerInstanceId == x.Id)?.AccessLevel.ToString() ?? "Unknown"
     }).ToList();
     return Results.Ok(instances);
+}).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
+
+// Minimal API endpoint for downloading a backup
+app.MapGet("/api/instances/{id:int}/backups/{filename}", async (int id, string filename, AppDbContext db, InstanceManager manager, UserManager<IdentityUser> userManager, ClaimsPrincipal user) =>
+{
+    if (!await ApiAuthHelper.HasAccessAsync(db, userManager, user, id, false, true)) return Results.Forbid();
+
+    string safeFilename = Path.GetFileName(filename);
+    string backupsDir = manager.GetBackupsDirectory(id);
+    string filePath = Path.Combine(backupsDir, safeFilename);
+
+    if (!System.IO.File.Exists(filePath))
+        return Results.NotFound();
+
+    return Results.File(filePath, "application/zip", safeFilename);
 }).RequireAuthorization(policy => policy.AddAuthenticationSchemes(IdentityConstants.ApplicationScheme, "ApiKey").RequireAuthenticatedUser());
 
 // Minimal API endpoint for listing saves for an instance
@@ -264,7 +279,7 @@ app.Run();
 
 public static class ApiAuthHelper
 {
-    public static async Task<bool> HasAccessAsync(AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user, int instanceId, bool requireAdmin)
+    public static async Task<bool> HasAccessAsync(AppDbContext db, UserManager<IdentityUser> userManager, ClaimsPrincipal user, int instanceId, bool requireAdmin, bool requireDownload = false)
     {
         IdentityUser? identityUser = await userManager.GetUserAsync(user);
         if (identityUser == null) return false;
@@ -276,6 +291,9 @@ public static class ApiAuthHelper
         if (access == null) return false;
 
         if (requireAdmin && access.AccessLevel != FactorioLibrary.Models.ServerAccessLevel.Admin)
+            return false;
+
+        if (requireDownload && access.AccessLevel == FactorioLibrary.Models.ServerAccessLevel.Viewer)
             return false;
 
         return true;

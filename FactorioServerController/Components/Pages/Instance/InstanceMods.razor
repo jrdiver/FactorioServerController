@@ -134,9 +134,12 @@ else
                             }
                         </button>
                     }
-                    <a href="/api/instances/@instance.Id/mods/downloadAll" class="btn btn-glass-secondary me-3" download>
-                        <i class="bi bi-cloud-arrow-down me-2"></i><span>Download Mod Pack</span>
-                    </a>
+                    @if (canDownload)
+                    {
+                        <a href="/api/instances/@instance.Id/mods/downloadAll" class="btn btn-glass-secondary me-3" download>
+                            <i class="bi bi-cloud-arrow-down me-2"></i><span>Download Mod Pack</span>
+                        </a>
+                    }
                     @if (!isViewer)
                     {
                         <button class="btn btn-danger" @onclick="DeleteAllModsWithConfirm" disabled="@(isUpdating || isUploading)">
@@ -269,7 +272,7 @@ else
                                                     <i class="bi bi-cloud-download"></i>
                                                 </button>
                                             }
-                                            @if (!mod.IsMissing)
+                                            @if (!mod.IsMissing && canDownload)
                                             {
                                                 <a href="/api/instances/@instance.Id/mods/@mod.Name" class="btn btn-sm btn-glass-secondary text-primary me-2" download title="Download Mod">
                                                     <i class="bi bi-cloud-arrow-down"></i>
@@ -345,6 +348,7 @@ else
     private string? updateProgress;
     private string? updateProgressFraction;
     private bool isViewer;
+    private bool canDownload;
 
     protected override async Task OnInitializedAsync()
     {
@@ -366,7 +370,12 @@ else
                 Navigation.NavigateTo("/");
                 return;
             }
-            isViewer = access.AccessLevel == ServerAccessLevel.Viewer;
+            isViewer = access.AccessLevel == ServerAccessLevel.Viewer || access.AccessLevel == ServerAccessLevel.ViewerWithDownload;
+            canDownload = access.AccessLevel != ServerAccessLevel.Viewer;
+        }
+        else
+        {
+            canDownload = true;
         }
 
         instance = await DbContext.ServerInstances.FirstOrDefaultAsync(x => x.Id == Id);
@@ -492,7 +501,7 @@ else
         return "";
     }
 
-    private async Task UpdateModCacheData()
+    private async Task UpdateModCacheData(bool silent = false)
     {
         if (modFiles == null || !modFiles.Any()) return;
         
@@ -515,7 +524,7 @@ else
             if (mod.IsBuiltIn || mod.IsConfig || (string.IsNullOrEmpty(mod.CurrentVersion) && !mod.IsMissing)) continue;
             
             current++;
-            if (isApplyingModpack || isSyncing)
+            if (!silent && (isApplyingModpack || isSyncing))
             {
                 updateProgressFraction = $"{current}/{total}";
                 updateProgress = $"Checking mod portal ({updateProgressFraction}) {mod.ModName}...";
@@ -1048,17 +1057,36 @@ else
                 }
             }
             
-            // Check global mods first!
-            await InstanceManager.ResolveMissingModsFromGlobalAsync(Id, (current, total, zipName) => 
+            // Reload mods so it knows what mods are in the list (most will show as missing)
+            LoadMods();
+
+            // Run disk copy and network API fetch in parallel!
+            var globalMods = ModManager.GetGlobalMods();
+            Task resolveTask = InstanceManager.ResolveMissingModsFromGlobalAsync(Id, globalMods, (current, total, zipName, sizeBytes) => 
             {
+                string modName = GetModNameFromFilename(zipName);
+                ModFileInfo? mod = modFiles?.FirstOrDefault(m => string.Equals(m.ModName, modName, StringComparison.OrdinalIgnoreCase));
+                if (mod != null && mod.IsMissing)
+                {
+                    mod.IsMissing = false;
+                    mod.Name = zipName;
+                    mod.CurrentVersion = GetModVersionFromFilename(zipName);
+                    mod.SizeBytes = sizeBytes;
+                }
+
                 updateProgressFraction = $"{current}/{total}";
                 updateProgress = $"Copying local cache ({updateProgressFraction}) {zipName}...";
                 InvokeAsync(StateHasChanged);
             });
             
-            // Reload mods and check updates
+            // Pass true to silent to prevent UI flickering with resolveTask
+            Task apiTask = UpdateModCacheData(silent: true);
+
+            await Task.WhenAll(resolveTask, apiTask);
+            
+            // Reload mods to see what actually copied successfully, and re-apply the cached API data instantaneously
             LoadMods();
-            await UpdateModCacheData();
+            await UpdateModCacheData(silent: true);
             
             // Auto-trigger an update for all missing mods (so it acts like a true modpack sync)
             if (modFiles != null && modFiles.Any(m => m.IsMissing || m.HasUpdateAvailable))
