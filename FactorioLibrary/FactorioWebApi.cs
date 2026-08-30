@@ -19,7 +19,7 @@ public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsServi
     public async Task<FactorioVersions?> GetVersions()
     {
         string json = await Shared.HttpClient.GetStringAsync(VersionsUrl);
-        return System.Text.Json.JsonSerializer.Deserialize<FactorioVersions>(json);
+        return JsonSerializer.Deserialize<FactorioVersions>(json);
     }
 
     public async Task<List<FactorioRelease>> GetReleases()
@@ -47,17 +47,17 @@ public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsServi
                 int pagesFetched = 0;
                 while (!string.IsNullOrEmpty(url) && pagesFetched < 20)
                 {
-                    JsonElement response = await Shared.HttpClient.GetFromJsonAsync<System.Text.Json.JsonElement>(url);
+                    JsonElement response = await Shared.HttpClient.GetFromJsonAsync<JsonElement>(url);
 
                     bool foundPre10 = false;
                     foreach (JsonElement result in response.GetProperty("results").EnumerateArray())
                     {
                         string name = "";
-                        if (result.TryGetProperty("name", out JsonElement nameProp) && nameProp.ValueKind == System.Text.Json.JsonValueKind.String)
+                        if (result.TryGetProperty("name", out JsonElement nameProp) && nameProp.ValueKind == JsonValueKind.String)
                             name = nameProp.GetString() ?? "";
 
                         string digest = "";
-                        if (result.TryGetProperty("digest", out JsonElement digestProp) && digestProp.ValueKind == System.Text.Json.JsonValueKind.String)
+                        if (result.TryGetProperty("digest", out JsonElement digestProp) && digestProp.ValueKind == JsonValueKind.String)
                             digest = digestProp.GetString() ?? "";
 
                         if (!string.IsNullOrEmpty(name))
@@ -68,7 +68,7 @@ public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsServi
                         }
                     }
 
-                    if (response.TryGetProperty("next", out JsonElement nextProp) && nextProp.ValueKind == System.Text.Json.JsonValueKind.String)
+                    if (response.TryGetProperty("next", out JsonElement nextProp) && nextProp.ValueKind == JsonValueKind.String)
                         url = nextProp.GetString();
                     else
                         url = null;

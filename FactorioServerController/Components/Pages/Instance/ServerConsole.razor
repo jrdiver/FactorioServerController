@@ -9,7 +9,7 @@
 @implements IAsyncDisposable
 @inject AppDbContext DbContext
 @inject InstanceManager InstanceManager
-@inject FactorioLibrary.Services.RconService RconService
+@inject RconService RconService
 @inject NavigationManager Navigation
 @inject IJSRuntime JsRuntime
 @inject AuthenticationStateProvider AuthStateProvider
@@ -180,7 +180,7 @@ else
         
         // Background task to flush pending logs to the UI exactly 10 times a second
         _ = Task.Run(async () => {
-            using PeriodicTimer timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+            using PeriodicTimer timer = new(TimeSpan.FromMilliseconds(100));
             try {
                 while (await timer.WaitForNextTickAsync(cts.Token)) {
                     bool hasLogs = false;

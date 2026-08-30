@@ -128,7 +128,7 @@ app.MapGet("/api/instances/{id:int}/saves/{filename}", async (int id, string fil
     string savesDir = manager.GetSavesDirectory(id);
     string filePath = Path.Combine(savesDir, safeFilename);
 
-    if (!System.IO.File.Exists(filePath))
+    if (!File.Exists(filePath))
         return Results.NotFound();
 
     return Results.File(filePath, "application/zip", safeFilename);
@@ -143,7 +143,7 @@ app.MapGet("/api/instances/{id:int}/mods/{filename}", async (int id, string file
     string modsDir = manager.GetModsDirectory(id);
     string filePath = Path.Combine(modsDir, safeFilename);
 
-    if (!System.IO.File.Exists(filePath))
+    if (!File.Exists(filePath))
         return Results.NotFound();
 
     return Results.File(filePath, "application/zip", safeFilename);
@@ -160,8 +160,8 @@ app.MapGet("/api/instances/{id:int}/mods/downloadAll", async (int id, InstanceMa
 
     string tempZipPath = Path.Combine(manager.GetConfigDirectory(id), "modpack_temp.zip");
 
-    if (System.IO.File.Exists(tempZipPath))
-        System.IO.File.Delete(tempZipPath);
+    if (File.Exists(tempZipPath))
+        File.Delete(tempZipPath);
 
     System.IO.Compression.ZipFile.CreateFromDirectory(modsDir, tempZipPath, System.IO.Compression.CompressionLevel.Fastest, false);
 
@@ -176,7 +176,7 @@ app.MapGet("/api/instances", async (AppDbContext db, InstanceManager manager, Us
     bool isGlobalAdmin = await userManager.IsInRoleAsync(identityUser, "Administrator");
 
     IQueryable<ServerInstance> query = db.ServerInstances.AsQueryable();
-    List<FactorioLibrary.Models.UserServerAccess>? accessList = null;
+    List<UserServerAccess>? accessList = null;
 
     if (!isGlobalAdmin)
     {
@@ -212,7 +212,7 @@ app.MapGet("/api/instances/{id:int}/backups/{filename}", async (int id, string f
     string backupsDir = manager.GetBackupsDirectory(id);
     string filePath = Path.Combine(backupsDir, safeFilename);
 
-    if (!System.IO.File.Exists(filePath))
+    if (!File.Exists(filePath))
         return Results.NotFound();
 
     return Results.File(filePath, "application/zip", safeFilename);
@@ -290,10 +290,10 @@ public static class ApiAuthHelper
         UserServerAccess? access = await db.UserServerAccesses.FirstOrDefaultAsync(usa => usa.UserId == identityUser.Id && usa.ServerInstanceId == instanceId);
         if (access == null) return false;
 
-        if (requireAdmin && access.AccessLevel != FactorioLibrary.Models.ServerAccessLevel.Admin)
+        if (requireAdmin && access.AccessLevel != ServerAccessLevel.Admin)
             return false;
 
-        if (requireDownload && access.AccessLevel == FactorioLibrary.Models.ServerAccessLevel.Viewer)
+        if (requireDownload && access.AccessLevel == ServerAccessLevel.Viewer)
             return false;
 
         return true;

@@ -126,7 +126,7 @@
                 @if (Navigation.Uri.Contains("error="))
                 {
                     Uri uri = new(Navigation.Uri);
-                    Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+                    Dictionary<string, StringValues> query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
                     if (query.TryGetValue("error", out StringValues err))
                     {
                         <div class="alert alert-danger">@err</div>
@@ -135,7 +135,7 @@
                 @if (Navigation.Uri.Contains("msg="))
                 {
                     Uri uri = new(Navigation.Uri);
-                    Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+                    Dictionary<string, StringValues> query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
                     if (query.TryGetValue("msg", out StringValues msg))
                     {
                         <div class="alert alert-success">@msg</div>

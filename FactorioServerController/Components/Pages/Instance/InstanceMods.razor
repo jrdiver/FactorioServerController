@@ -313,7 +313,7 @@ else
     private string? syncError;
     private ModList modList = new();
     
-    private List<FactorioLibrary.Models.Modpack>? availableModpacks;
+    private List<Modpack>? availableModpacks;
     private bool isApplyingModpack;
     private bool isSavingModpack;
     private bool showModpackDropdown;
@@ -542,7 +542,7 @@ else
         }
     }
 
-    private void ApplyModUpdateData(ModFileInfo mod, FactorioLibrary.Services.ModInfo? info, string targetFactorioVersion)
+    private void ApplyModUpdateData(ModFileInfo mod, ModInfo? info, string targetFactorioVersion)
     {
         if (info == null) return;
         
@@ -550,7 +550,7 @@ else
         
         if (info.Releases != null && info.Releases.Any())
         {
-            List<FactorioLibrary.Services.ModRelease> validReleases = info.Releases;
+            List<ModRelease> validReleases = info.Releases;
             if (!string.IsNullOrEmpty(targetFactorioVersion))
             {
                 List<ModRelease> filtered = validReleases.Where(r => r.InfoJson != null && r.InfoJson.FactorioVersion == targetFactorioVersion).ToList();
@@ -748,7 +748,7 @@ else
         StateHasChanged();
     }
 
-    private async Task OnBeforeInternalNavigation(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
+    private async Task OnBeforeInternalNavigation(LocationChangingContext context)
     {
         if (isUploading)
         {
@@ -762,7 +762,7 @@ else
 
     private async Task UploadModFiles(InputFileChangeEventArgs e)
     {
-        IReadOnlyList<Microsoft.AspNetCore.Components.Forms.IBrowserFile> files = e.GetMultipleFiles(500); // Allow up to 500 files at once
+        IReadOnlyList<IBrowserFile> files = e.GetMultipleFiles(500); // Allow up to 500 files at once
         if (!files.Any()) return;
 
         isUploading = true;
@@ -775,7 +775,7 @@ else
             string modsDir = InstanceManager.GetModsDirectory(Id);
             if (!Directory.Exists(modsDir)) Directory.CreateDirectory(modsDir);
 
-            foreach (Microsoft.AspNetCore.Components.Forms.IBrowserFile file in files)
+            foreach (IBrowserFile file in files)
             {
                 if (file.Name.Equals("mod-list.json", StringComparison.OrdinalIgnoreCase))
                 {
@@ -976,8 +976,8 @@ else
         try
         {
             string savePath = Path.Combine(InstanceManager.GetSavesDirectory(Id), saveName);
-            using System.IO.Compression.ZipArchive archive = System.IO.Compression.ZipFile.OpenRead(savePath);
-            System.IO.Compression.ZipArchiveEntry? entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
+            using ZipArchive archive = ZipFile.OpenRead(savePath);
+            ZipArchiveEntry? entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("mod-settings.dat", StringComparison.OrdinalIgnoreCase));
             
             if (entry != null)
             {
@@ -1004,7 +1004,7 @@ else
         return string.Format("{0:n1} {1}", number, suffixes[counter]);
     }
 
-    private async Task ApplyModpack(FactorioLibrary.Models.Modpack modpack)
+    private async Task ApplyModpack(Modpack modpack)
     {
         bool confirmed = await Js.InvokeAsync<bool>("confirm", $"Are you sure you want to apply the '{modpack.Name}' modpack? This will overwrite your current mod-list.json and mod-settings.dat, and you will need to download missing mods.");
         if (!confirmed) return;
@@ -1061,7 +1061,7 @@ else
             LoadMods();
 
             // Run disk copy and network API fetch in parallel!
-            var globalMods = ModManager.GetGlobalMods();
+            List<LocalModInfo> globalMods = ModManager.GetGlobalMods();
             Task resolveTask = InstanceManager.ResolveMissingModsFromGlobalAsync(Id, globalMods, (current, total, zipName, sizeBytes) => 
             {
                 string modName = GetModNameFromFilename(zipName);
@@ -1139,7 +1139,7 @@ else
                 datContent = await File.ReadAllBytesAsync(modSettingsPath);
             }
 
-            Modpack modpack = new FactorioLibrary.Models.Modpack
+            Modpack modpack = new()
             {
                 Name = modpackName,
                 TargetFactorioVersion = instance?.AssignedVersion ?? "latest",
