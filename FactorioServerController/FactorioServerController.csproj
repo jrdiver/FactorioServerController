@@ -7,7 +7,7 @@
 		<BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
 		<UserSecretsId>c1baddf1-ebba-45a1-a526-5ec3a91d4448</UserSecretsId>
 		<DockerfileContext>..\.</DockerfileContext>
-		<Version>1.0.1</Version>
+		<Version>1.0.2</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
