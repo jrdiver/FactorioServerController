@@ -7,6 +7,8 @@ using FactorioLibrary.Services;
 
 namespace FactorioLibrary;
 
+public record DockerTagInfo(string Tag, string DisplayName);
+
 public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsService settingsService)
 {
     private const string BaseVersionsUrl = "https://factorio.com/get-available-versions";
@@ -14,18 +16,14 @@ public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsServi
     private List<DockerTagInfo>? cachedTags;
     private DateTime lastCacheTime;
 
-    private string VersionsUrl => $"{BaseVersionsUrl}?username={Uri.EscapeDataString(credentials.Username)}&token={Uri.EscapeDataString(credentials.Token)}";
-
-    public async Task<FactorioVersions?> GetVersions()
+    private string VersionsUrl
     {
-        string json = await Shared.HttpClient.GetStringAsync(VersionsUrl);
-        return JsonSerializer.Deserialize<FactorioVersions>(json);
-    }
-
-    public async Task<List<FactorioRelease>> GetReleases()
-    {
-        FactorioVersions? versions = await GetVersions();
-        return versions?.ToReleases() ?? [];
+        get
+        {
+            if (string.IsNullOrEmpty(credentials.Username) || string.IsNullOrEmpty(credentials.Token))
+                return BaseVersionsUrl;
+            return $"{BaseVersionsUrl}?username={Uri.EscapeDataString(credentials.Username)}&token={Uri.EscapeDataString(credentials.Token)}";
+        }
     }
 
     public async Task<List<DockerTagInfo>> GetDockerTagsAsync()

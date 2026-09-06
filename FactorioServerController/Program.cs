@@ -63,7 +63,6 @@ string settingsPath = builder.Configuration["GlobalSettings:Path"];
 if (string.IsNullOrWhiteSpace(settingsPath)) settingsPath = Path.Combine(dataDir, "settings.json");
 builder.Services.AddSingleton<GlobalSettingsService>(sp => new(settingsPath));
 builder.Services.AddSingleton<FactorioWebApi>(sp => new(new(), sp.GetRequiredService<GlobalSettingsService>()));
-builder.Services.AddSingleton<VersionManager>();
 builder.Services.AddSingleton<ModManager>();
 builder.Services.AddSingleton<InstanceManager>();
 builder.Services.AddSingleton<RconService>();
