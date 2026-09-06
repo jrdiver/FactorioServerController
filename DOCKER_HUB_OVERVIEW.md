@@ -27,6 +27,7 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # MUST be an absolute path (or use ${PWD}). Do not use relative paths like ./data
       - HOST_DATA_PATH=${PWD}/data
     volumes:
       - ./data:/data

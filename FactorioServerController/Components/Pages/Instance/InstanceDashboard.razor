@@ -52,7 +52,16 @@
             <div class="col-md-6">
                 <div class="p-3 rounded bg-dark border border-secondary text-center h-100">
                     <h6 class="text-muted mb-3"><i class="bi bi-memory me-2"></i>Memory Usage</h6>
-                    <h2 class="text-white mb-3">@stats.RamUsageMb.ToString("F0") MB</h2>
+                    @if (stats.RamUsageMb < 0.1)
+                    {
+                        <h2 class="text-warning mb-3" style="font-size: 1.25rem;" title="Docker memory metrics are unavailable. Enable memory cgroups in your kernel boot parameters (e.g. /boot/cmdline.txt).">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Unavailable
+                        </h2>
+                    }
+                    else
+                    {
+                        <h2 class="text-white mb-3">@stats.RamUsageMb.ToString("F0") MB</h2>
+                    }
                     <div class="progress bg-secondary" style="height: 10px;">
                         <div class="progress-bar @(stats.RamUsageMb > (stats.RamLimitMb * 0.8) ? "bg-danger" : "bg-info")" role="progressbar" 
                              style="width: @(stats.RamLimitMb > 0 ? Math.Min(100, (stats.RamUsageMb / stats.RamLimitMb) * 100) : 0)%"></div>

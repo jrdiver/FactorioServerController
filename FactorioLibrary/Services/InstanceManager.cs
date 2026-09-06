@@ -167,13 +167,30 @@ public class InstanceManager
             {
                 string localDataPath = GetLocalDataPath(instance.Id);
 
-                string configPath = Path.Combine(localDataPath, "config");
-                Directory.CreateDirectory(configPath);
-                await File.WriteAllTextAsync(Path.Combine(configPath, "rconpw"), instance.RconPassword);
+                // Pre-create all folders so we can set proper permissions on them
+                Directory.CreateDirectory(localDataPath);
+                Directory.CreateDirectory(Path.Combine(localDataPath, "config"));
+                Directory.CreateDirectory(Path.Combine(localDataPath, "saves"));
+                Directory.CreateDirectory(Path.Combine(localDataPath, "mods"));
+                
+                await File.WriteAllTextAsync(Path.Combine(localDataPath, "config", "rconpw"), instance.RconPassword);
+
+                // ARM builds of factoriotools drop privileges to uid 845 immediately, 
+                // preventing them from reading the rconpw or writing saves if created by root.
+                // We run chmod 777 so both the C# app and the factorio user can read/write smoothly.
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "chmod",
+                        Arguments = $"-R 777 \"{localDataPath}\"",
+                        UseShellExecute = false
+                    })?.WaitForExit();
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Could not pre-create rconpw file: {ex.Message}");
+                Console.WriteLine($"Could not pre-create rconpw file or fix permissions: {ex.Message}");
             }
 
             // 4. Configure save file loading behavior
@@ -215,8 +232,8 @@ public class InstanceManager
 
             List<string> envVars =
             [
-                $"PORT={instance.Port}",
-                $"RCON_PORT={instance.RconPort}",
+                $"PORT=34197",
+                $"RCON_PORT=27015",
                 $"RCON_PASSWORD={instance.RconPassword}",
                 $"LOAD_LATEST_SAVE={loadLatest}",
                 $"GENERATE_NEW_SAVE={generateNewSave}"
@@ -385,12 +402,36 @@ public class InstanceManager
 
                 return await dockerClient.Containers.GetContainerLogsAsync(containerId, false, parameters, cancellationToken);
             }
-            catch
+            catch (Exception ex)
             {
-                return null;
+                Console.WriteLine($"Error getting log stream for instance {instanceId}: {ex.Message}");
             }
         }
         return null;
+    }
+
+    public async Task<List<string>> GetOfflineLogsAsync(int instanceId, int tail = 200)
+    {
+        string containerName = $"factorio_server_{instanceId}";
+        try
+        {
+            var containers = await dockerClient.Containers.ListContainersAsync(new() { All = true });
+            var container = containers.FirstOrDefault(c => c.Names.Contains($"/{containerName}"));
+            if (container != null)
+            {
+                var parameters = new ContainerLogsParameters { ShowStdout = true, ShowStderr = true, Tail = tail.ToString(), Follow = false };
+                using var stream = await dockerClient.Containers.GetContainerLogsAsync(container.ID, false, parameters);
+                var (stdout, stderr) = await stream.ReadOutputToEndAsync(CancellationToken.None);
+                
+                string combined = stdout + "\n" + stderr;
+                return combined.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error getting offline logs for {instanceId}: {ex.Message}");
+        }
+        return ["No offline logs found for this server. Container may have been removed."];
     }
 
     public async Task<string?> GetContainerIpAddressAsync(int instanceId)

@@ -44,17 +44,47 @@ public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsServi
                 string? url = "https://hub.docker.com/v2/repositories/factoriotools/factorio/tags?page_size=100";
                 List<(string Name, string Digest)> rawTags = [];
 
+                string targetArchStr = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "arm64" : "amd64";
+                
                 int pagesFetched = 0;
                 while (!string.IsNullOrEmpty(url) && pagesFetched < 20)
                 {
                     JsonElement response = await Shared.HttpClient.GetFromJsonAsync<JsonElement>(url);
 
-                    bool foundPre10 = false;
                     foreach (JsonElement result in response.GetProperty("results").EnumerateArray())
                     {
+                        // Filter out tags that don't support our host architecture
+                        bool supportsArch = false;
+                        if (result.TryGetProperty("images", out JsonElement imagesProp) && imagesProp.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (JsonElement img in imagesProp.EnumerateArray())
+                            {
+                                if (img.TryGetProperty("architecture", out JsonElement archProp) && archProp.GetString() == targetArchStr)
+                                {
+                                    supportsArch = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!supportsArch)
+                            continue;
+
                         string name = "";
                         if (result.TryGetProperty("name", out JsonElement nameProp) && nameProp.ValueKind == JsonValueKind.String)
                             name = nameProp.GetString() ?? "";
+
+                        // Factoriotools recently added automated multi-arch manifests, meaning 
+                        // they generate an 'arm64' manifest even for Factorio 0.12, but it contains 
+                        // an x64 binary that instantly crashes on boot with 'exec format error'.
+                        // Factorio officially added arm64 support in late 1.1.x.
+                        if (targetArchStr == "arm64" && Version.TryParse(name, out Version? parsedVersion))
+                        {
+                            if (parsedVersion.Major == 0 || (parsedVersion.Major == 1 && parsedVersion.Minor < 1))
+                            {
+                                continue; // Skip anything older than 1.1 on ARM
+                            }
+                        }
 
                         string digest = "";
                         if (result.TryGetProperty("digest", out JsonElement digestProp) && digestProp.ValueKind == JsonValueKind.String)
@@ -63,8 +93,6 @@ public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsServi
                         if (!string.IsNullOrEmpty(name))
                         {
                             rawTags.Add((name, digest));
-                            if (name.StartsWith("0."))
-                                foundPre10 = true;
                         }
                     }
 
@@ -74,10 +102,6 @@ public class FactorioWebApi(FactorioCredentials credentials, GlobalSettingsServi
                         url = null;
 
                     pagesFetched++;
-
-                    // Stop early if we hit pre-1.0 and don't need legacy versions
-                    if (foundPre10 && !settings.ShowLegacyVersions)
-                        break;
                 }
 
                 // Build a dictionary of digest -> semantic version (so we can see what "latest" points to)

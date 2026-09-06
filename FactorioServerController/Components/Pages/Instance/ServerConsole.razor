@@ -61,7 +61,7 @@ else
                     <i class="bi bi-terminal-fill me-2 text-accent"></i>
                     @instance.Name Console
                 </h2>
-                <div class="text-muted">Live server logs and RCON interface</div>
+                <div class="text-muted">Live console and RCON interface</div>
             </div>
             <div class="d-flex gap-2">
                 <div class="form-check form-switch mt-2 me-3">
@@ -76,14 +76,39 @@ else
         </div>
 
         <div class="glass-card flex-grow-1 d-flex flex-column overflow-hidden p-0 border border-secondary" style="min-height: 0; min-width: 0; width: 100%;">
-            <div id="console-output" class="flex-grow-1 p-3" style="overflow-y: scroll; overflow-x: auto; min-height: 0; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.9rem; background-color: #0f111a;">
-                @if (!InstanceManager.IsRunning(instance!.Id))
+            <div class="bg-dark border-bottom border-secondary p-2 d-flex gap-2">
+                <button class="btn btn-sm @(activeTab == "live" ? "btn-glass" : "btn-glass-secondary")" @onclick="@(() => ChangeTab("live"))">
+                    <i class="bi bi-terminal me-1"></i> Live Console
+                </button>
+                @if (!isViewer)
                 {
-                    <div class="text-danger">Server is currently offline. Start the server to view live console logs.</div>
+                    <button class="btn btn-sm @(activeTab == "current" ? "btn-glass" : "btn-glass-secondary")" @onclick="@(() => ChangeTab("current"))">
+                        <i class="bi bi-file-text me-1"></i> factorio-current.log
+                    </button>
+                    <button class="btn btn-sm @(activeTab == "previous" ? "btn-glass" : "btn-glass-secondary")" @onclick="@(() => ChangeTab("previous"))">
+                        <i class="bi bi-file-text me-1"></i> factorio-previous.log
+                    </button>
+                }
+            </div>
+            
+            <div id="console-output" class="flex-grow-1 p-3" style="overflow-y: scroll; overflow-x: auto; min-height: 0; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.9rem; background-color: #0f111a;">
+                @if (activeTab == "live")
+                {
+                    @if (!InstanceManager.IsRunning(instance!.Id))
+                    {
+                        <div class="text-warning mb-2 border-bottom border-secondary pb-2">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Server is currently offline. Displaying the last known logs.
+                        </div>
+                    }
+                    
+                    @foreach (string log in logs)
+                    {
+                        <div style="white-space: @(wrapLogs ? "pre-wrap" : "pre"); word-wrap: @(wrapLogs ? "break-word" : "normal"); color: #d7d7d7;">@log</div>
+                    }
                 }
                 else
                 {
-                    @foreach (string log in logs)
+                    @foreach (string log in fileLogs)
                     {
                         <div style="white-space: @(wrapLogs ? "pre-wrap" : "pre"); word-wrap: @(wrapLogs ? "break-word" : "normal"); color: #d7d7d7;">@log</div>
                     }
@@ -98,16 +123,16 @@ else
                 else
                 {
                     <div class="d-flex flex-wrap gap-2 mb-2">
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/time"))" disabled="@(!InstanceManager.IsRunning(instance!.Id))">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/time"))" disabled="@(!InstanceManager.IsRunning(instance!.Id) || activeTab != "live")">
                             <i class="bi bi-clock me-1"></i> Time
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/players"))" disabled="@(!InstanceManager.IsRunning(instance!.Id))">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/players"))" disabled="@(!InstanceManager.IsRunning(instance!.Id) || activeTab != "live")">
                             <i class="bi bi-people me-1"></i> Players
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/server-save"))" disabled="@(!InstanceManager.IsRunning(instance!.Id))">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/server-save"))" disabled="@(!InstanceManager.IsRunning(instance!.Id) || activeTab != "live")">
                             <i class="bi bi-save me-1"></i> Save Server
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/admins"))" disabled="@(!InstanceManager.IsRunning(instance!.Id))">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => SendPresetCommand("/admins"))" disabled="@(!InstanceManager.IsRunning(instance!.Id) || activeTab != "live")">
                             <i class="bi bi-shield-lock me-1"></i> Admins
                         </button>
                     </div>
@@ -115,9 +140,9 @@ else
                         <input type="text" @bind="rconInput" @bind:event="oninput" 
                                class="form-control bg-transparent text-white border-secondary flex-grow-1" 
                                placeholder="Enter RCON command (e.g. time, players, save)..." 
-                               disabled="@(!InstanceManager.IsRunning(instance!.Id))" />
+                               disabled="@(!InstanceManager.IsRunning(instance!.Id) || activeTab != "live")" />
                                
-                        <button type="submit" class="btn btn-glass" disabled="@(!InstanceManager.IsRunning(instance!.Id) || string.IsNullOrWhiteSpace(rconInput))">
+                        <button type="submit" class="btn btn-glass" disabled="@(!InstanceManager.IsRunning(instance!.Id) || activeTab != "live" || string.IsNullOrWhiteSpace(rconInput))">
                             <span><i class="bi bi-send-fill me-2"></i>Send</span>
                         </button>
                     </form>
@@ -132,16 +157,40 @@ else
     public int Id { get; set; }
 
     private ServerInstance? instance;
-    private List<string> logs = new();
+    private bool isViewer = false;
+    private bool wrapLogs = true;
     private string rconInput = "";
-    private bool wrapLogs; // Default to no wrap as requested
-    private bool isViewer;
+    
+    private string activeTab = "live";
+    private List<string> fileLogs = new();
     
     private MultiplexedStream? logStream;
+    private List<string> logs = new();
     private CancellationTokenSource cts = new();
     private bool isConnecting;
     private List<string> pendingLogs = new();
     private readonly object logLock = new();
+
+    private async Task ChangeTab(string tab)
+    {
+        activeTab = tab;
+        if (tab == "current" || tab == "previous")
+        {
+            string fileName = tab == "current" ? "factorio-current.log" : "factorio-previous.log";
+            string path = Path.Combine(InstanceManager.GetLocalDataPath(instance!.Id), fileName);
+            if (File.Exists(path))
+            {
+                fileLogs = (await File.ReadAllLinesAsync(path)).ToList();
+            }
+            else
+            {
+                fileLogs = new() { $"[{fileName}] not found. Server may not have created it yet." };
+            }
+        }
+        await InvokeAsync(StateHasChanged);
+        
+        try { await JsRuntime.InvokeVoidAsync("setupConsoleAutoScroll"); } catch { }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -176,6 +225,10 @@ else
         if (InstanceManager.IsRunning(instance.Id))
         {
             await StartLogStreamAsync();
+        }
+        else
+        {
+            logs = await InstanceManager.GetOfflineLogsAsync(instance.Id);
         }
         
         // Background task to flush pending logs to the UI exactly 10 times a second

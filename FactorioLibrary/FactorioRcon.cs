@@ -23,10 +23,14 @@ public class FactorioRcon(string host, int port, string password) : IDisposable
         while (true)
         {
             (int Id, int Type, string Body) response = await ReceivePacketAsync();
-            if (response.Id == -1)
-                throw new("Authentication rejected by server (Invalid password or RCON bug).");
-            if (response.Id == authId)
-                break; // Auth successful
+            
+            if (response.Type == 2) // SERVERDATA_AUTH_RESPONSE
+            {
+                if (response.Id == -1)
+                    throw new("Authentication rejected by server (Invalid password or RCON bug).");
+                if (response.Id == authId)
+                    break; // Auth successful
+            }
         }
 
         return true;
@@ -104,6 +108,8 @@ public class FactorioRcon(string host, int port, string password) : IDisposable
         int id = BitConverter.ToInt32(packetData, 0);
         int type = BitConverter.ToInt32(packetData, 4);
         string body = Encoding.UTF8.GetString(packetData, 8, size - 10); // exclude ID, Type, and two null bytes
+
+        Console.WriteLine($"[RCON DEBUG] Received Packet - Size: {size}, ID: {id}, Type: {type}, Body: '{body}'");
 
         return (id, type, body);
     }

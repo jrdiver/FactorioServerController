@@ -42,6 +42,13 @@
                             <label class="form-check-label text-white" for="showLegacyVersions">
                                 <strong>Show legacy versions (pre-1.0)</strong>
                                 <div class="text-muted small">Enable this to allow selecting Factorio versions released before 1.0 (e.g., 0.18, 0.17). This requires fetching additional history from Docker Hub.</div>
+                                @if (System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 || System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm)
+                                {
+                                    <div class="text-warning small mt-1">
+                                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                        <strong>ARM Architecture Detected:</strong> Legacy versions of Factorio generally do not have ARM support published and will not appear in the dropdown even if enabled.
+                                    </div>
+                                }
                             </label>
                         </div>
 
