@@ -64,6 +64,7 @@ if (string.IsNullOrWhiteSpace(settingsPath)) settingsPath = Path.Combine(dataDir
 builder.Services.AddSingleton<GlobalSettingsService>(sp => new(settingsPath));
 builder.Services.AddSingleton<FactorioWebApi>(sp => new(new(), sp.GetRequiredService<GlobalSettingsService>()));
 builder.Services.AddSingleton<ModManager>();
+builder.Services.AddSingleton<FactorioLibrary.Services.Orchestrators.IContainerOrchestrator, FactorioLibrary.Services.Orchestrators.DockerOrchestrator>();
 builder.Services.AddSingleton<InstanceManager>();
 builder.Services.AddSingleton<RconService>();
 

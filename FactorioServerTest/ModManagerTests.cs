@@ -29,7 +29,7 @@ public class ModManagerTests
         HttpClient httpClient = new(mockHandler);
         
         IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection().Build();
-        InstanceManager instanceManager = new(config, null!, null!);
+        InstanceManager instanceManager = new(config, null!, null!, null!);
         ModManager manager = new(null!, instanceManager, httpClient);
 
         // Act
@@ -56,7 +56,7 @@ public class ModManagerTests
         HttpClient httpClient = new(mockHandler);
         
         IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection().Build();
-        InstanceManager instanceManager = new(config, null!, null!);
+        InstanceManager instanceManager = new(config, null!, null!, null!);
         ModManager manager = new(null!, instanceManager, httpClient);
 
         // Act
@@ -64,5 +64,15 @@ public class ModManagerTests
 
         // Assert
         Assert.IsNull(result);
+    }
+}
+public class MockHttpMessageHandler : HttpMessageHandler
+{
+    public HttpResponseMessage ResponseToReturn { get; set; } = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+    public HttpRequestMessage? LastRequest { get; private set; }
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        LastRequest = request;
+        return Task.FromResult(ResponseToReturn);
     }
 }

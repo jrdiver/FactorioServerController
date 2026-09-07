@@ -2,9 +2,11 @@
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
+@using FactorioLibrary.Services.Orchestrators
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
 @inject InstanceManager InstanceManager
+@inject IContainerOrchestrator Orchestrator
 @inject AppDbContext DbContext
 @inject AuthenticationStateProvider AuthStateProvider
 @inject UserManager<IdentityUser> UserManager
@@ -14,6 +16,17 @@
 <PageTitle>Fleet Status</PageTitle>
 
 <div class="container-fluid py-4">
+    @if (!string.IsNullOrEmpty(healthWarning))
+    {
+        <div class="alert alert-danger d-flex align-items-center mb-4 border-0" role="alert">
+            <i class="bi bi-exclamation-triangle-fill fs-4 me-3"></i>
+            <div>
+                <h5 class="alert-heading mb-1">Configuration Error (@Orchestrator.OrchestratorName)</h5>
+                <p class="mb-0">@healthWarning</p>
+            </div>
+        </div>
+    }
+
     <div class="row mb-4 align-items-center">
         <div class="col">
             <h1 class="display-5 text-accent mb-0"><i class="bi bi-activity me-2"></i>Server Stats</h1>
@@ -128,9 +141,16 @@
     private int maxCpus;
     private List<string> allPlayers = [];
     private bool isLoadingStats = true;
+    private string? healthWarning = null;
 
     protected override async Task OnInitializedAsync()
     {
+        var health = await Orchestrator.CheckHealthAsync();
+        if (!health.IsHealthy)
+        {
+            healthWarning = health.Message;
+        }
+
         await LoadInstances();
         
         if (instances != null && instances.Any())

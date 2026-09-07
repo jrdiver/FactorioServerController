@@ -1,6 +1,5 @@
 @page "/instance/{Id:int}/console"
 @using System.Text
-@using Docker.DotNet
 @using FactorioLibrary.Data
 @using FactorioLibrary.Models
 @using FactorioLibrary.Services
@@ -65,7 +64,7 @@ else
             </div>
             <div class="d-flex gap-2">
                 <div class="form-check form-switch mt-2 me-3">
-                    <input class="form-check-input" type="checkbox" id="wordWrapToggle" @bind="wrapLogs">
+                    <input class="form-check-input" type="checkbox" id="wordWrapToggle" @bind="wrapLogs" @bind:after="SaveWrapPreference">
                     <label class="form-check-label text-muted" for="wordWrapToggle">Word Wrap</label>
                 </div>
                 
@@ -164,7 +163,7 @@ else
     private string activeTab = "live";
     private List<string> fileLogs = new();
     
-    private MultiplexedStream? logStream;
+    
     private List<string> logs = new();
     private CancellationTokenSource cts = new();
     private bool isConnecting;
@@ -256,7 +255,7 @@ else
                         
                         // Autoscroll is now handled natively by JS MutationObserver in the browser
                     }
-                    else if (logStream == null && InstanceManager.IsRunning(instance!.Id) && !isConnecting)
+                    else if (!InstanceManager.IsRunning(instance!.Id) && !isConnecting)
                     {
                         isConnecting = true;
                         // Reconnect to log stream if the server started in the background
@@ -275,91 +274,53 @@ else
             try 
             {
                 await JsRuntime.InvokeVoidAsync("setupConsoleAutoScroll");
+                string? storedPref = await JsRuntime.InvokeAsync<string?>("localStorage.getItem", "console_wrapLogs");
+                if (storedPref != null && bool.TryParse(storedPref, out bool parsedPref))
+                {
+                    wrapLogs = parsedPref;
+                    StateHasChanged();
+                }
             }
             catch { }
         }
     }
 
+    private async Task SaveWrapPreference()
+    {
+        try
+        {
+            await JsRuntime.InvokeVoidAsync("localStorage.setItem", "console_wrapLogs", wrapLogs.ToString());
+        }
+        catch { }
+    }
+
     private async Task StartLogStreamAsync()
     {
-        logStream = await InstanceManager.GetLogStreamAsync(instance!.Id, cts.Token);
         isConnecting = false;
         
-        if (logStream != null)
-        {
-            // Start reading logs in the background without awaiting
-            _ = ReadLogsLoopAsync();
-        }
+        // Start reading logs in the background without awaiting
+        _ = ReadLogsLoopAsync();
     }
 
     private async Task ReadLogsLoopAsync()
     {
-        byte[] buffer = new byte[81920];
-        StringBuilder lineBuffer = new();
-        
         try
         {
-            while (!cts.IsCancellationRequested && logStream != null)
+            await foreach (string line in InstanceManager.GetLiveLogsAsync(instance!.Id, cts.Token))
             {
-                MultiplexedStream.ReadResult result = await logStream.ReadOutputAsync(buffer, 0, buffer.Length, cts.Token);
-                
-                if (result.EOF) break;
-
-                if (result.Count > 0)
+                string logLine = line;
+                if (instance != null)
                 {
-                    string text = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    
-                    lineBuffer.Append(text);
-                    string currentBuffer = lineBuffer.ToString();
-                    
-                    int newlineIndex;
-                    
-                    lock (logLock) 
-                    {
-                        while ((newlineIndex = currentBuffer.IndexOf('\n')) >= 0)
-                        {
-                            string logLine = currentBuffer.Substring(0, newlineIndex).TrimEnd('\r');
-                            
-                            if (instance != null)
-                            {
-                                if (!string.IsNullOrEmpty(instance.RconPassword))
-                                {
-                                    logLine = logLine.Replace(instance.RconPassword, "<private>");
-                                }
-                                if (instance.RconPort > 0)
-                                {
-                                    logLine = logLine.Replace(instance.RconPort.ToString(), "<private>");
-                                }
-                            }
-                            
-                            pendingLogs.Add(logLine);
-                            currentBuffer = currentBuffer.Substring(newlineIndex + 1);
-                        }
-                    }
-                    
-                    lineBuffer.Clear();
-                    lineBuffer.Append(currentBuffer);
+                    if (!string.IsNullOrEmpty(instance.RconPassword)) logLine = logLine.Replace(instance.RconPassword, "<private>");
+                    if (instance.RconPort > 0) logLine = logLine.Replace(instance.RconPort.ToString(), "<private>");
                 }
+                lock (logLock) { pendingLogs.Add(logLine); }
             }
         }
-        catch (OperationCanceledException)
-        {
-            // Expected
-        }
+        catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            await InvokeAsync(() => {
-                logs.Add($"[Error reading logs: {ex.Message}]");
-                StateHasChanged();
-            });
-        }
-        finally
-        {
-            if (logStream != null)
-            {
-                logStream.Dispose();
-                logStream = null;
-            }
+            await InvokeAsync(() => { logs.Add($"[Error reading logs: {ex.Message}]"); StateHasChanged(); });
         }
     }
 
@@ -426,10 +387,8 @@ else
     public async ValueTask DisposeAsync()
     {
         cts.Cancel();
-        if (logStream != null)
-        {
-            logStream.Dispose();
-        }
         cts.Dispose();
     }
 }
+
+
