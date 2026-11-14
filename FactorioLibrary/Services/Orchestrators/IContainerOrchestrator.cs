@@ -13,6 +13,8 @@ public interface IContainerOrchestrator
     
     bool IsContainerRunning(int instanceId);
 
+    string? GetContainerHostInfo(int instanceId);
+
     Task<bool> StartContainerAsync(ServerInstance instance, string hostBaseMountPath, string localDataPath, string savesDir, bool loadLatest, bool generateNewSave);
     
     Task StopContainerAsync(int instanceId, ServerInstance? instance);

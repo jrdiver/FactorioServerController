@@ -5,8 +5,11 @@ namespace FactorioLibrary.Services
 {
     public class RconService
     {
-        private string GetHost()
+        private string GetHost(int instanceId)
         {
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("KUBERNETES_SERVICE_HOST")))
+                return $"factorio-svc-{instanceId}";
+
             if (Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") != "true")
                 return "127.0.0.1";
 
@@ -46,7 +49,7 @@ namespace FactorioLibrary.Services
             {
                 if (!activeConnections.TryGetValue(instanceId, out FactorioRcon? rcon))
                 {
-                    rcon = new(GetHost(), port, password);
+                    rcon = new(GetHost(instanceId), port, password);
                     await rcon.ConnectAsync();
                     activeConnections.TryAdd(instanceId, rcon);
                 }
@@ -65,7 +68,7 @@ namespace FactorioLibrary.Services
 
                 try
                 {
-                    FactorioRcon freshRcon = new(GetHost(), port, password);
+                    FactorioRcon freshRcon = new(GetHost(instanceId), port, password);
                     await freshRcon.ConnectAsync();
                     activeConnections.TryAdd(instanceId, freshRcon);
                     return await freshRcon.SendCommandAsync(command);

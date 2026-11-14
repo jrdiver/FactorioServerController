@@ -82,6 +82,11 @@ namespace FactorioLibrary.Migrations
                     b.Property<int>("RconPort")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("TargetArchitecture")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.ToTable("ServerInstances");

@@ -255,9 +255,8 @@ else
                         
                         // Autoscroll is now handled natively by JS MutationObserver in the browser
                     }
-                    else if (!InstanceManager.IsRunning(instance!.Id) && !isConnecting)
+                    else if (InstanceManager.IsRunning(instance!.Id) && !isConnecting)
                     {
-                        isConnecting = true;
                         // Reconnect to log stream if the server started in the background
                         _ = StartLogStreamAsync();
                         await InvokeAsync(StateHasChanged);
@@ -294,12 +293,14 @@ else
         catch { }
     }
 
-    private async Task StartLogStreamAsync()
+    private Task StartLogStreamAsync()
     {
-        isConnecting = false;
-        
-        // Start reading logs in the background without awaiting
+        if (isConnecting)
+            return Task.CompletedTask;
+
+        isConnecting = true;
         _ = ReadLogsLoopAsync();
+        return Task.CompletedTask;
     }
 
     private async Task ReadLogsLoopAsync()
@@ -321,6 +322,10 @@ else
         catch (Exception ex)
         {
             await InvokeAsync(() => { logs.Add($"[Error reading logs: {ex.Message}]"); StateHasChanged(); });
+        }
+        finally
+        {
+            isConnecting = false;
         }
     }
 

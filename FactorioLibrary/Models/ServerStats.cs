@@ -8,5 +8,7 @@ namespace FactorioLibrary.Models
         public List<string> OnlinePlayers { get; set; } = [];
         public bool IsOnline { get; set; }
         public int OnlineCpus { get; set; }
+        public string? HostIp { get; set; }
+        public string? NodeName { get; set; }
     }
 }

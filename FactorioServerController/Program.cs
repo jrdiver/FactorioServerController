@@ -64,7 +64,33 @@ if (string.IsNullOrWhiteSpace(settingsPath)) settingsPath = Path.Combine(dataDir
 builder.Services.AddSingleton<GlobalSettingsService>(sp => new(settingsPath));
 builder.Services.AddSingleton<FactorioWebApi>(sp => new(new(), sp.GetRequiredService<GlobalSettingsService>()));
 builder.Services.AddSingleton<ModManager>();
-builder.Services.AddSingleton<FactorioLibrary.Services.Orchestrators.IContainerOrchestrator, FactorioLibrary.Services.Orchestrators.DockerOrchestrator>();
+builder.Services.AddSingleton<FactorioLibrary.Services.Orchestrators.IContainerOrchestrator>(sp =>
+{
+    RconService rcon = sp.GetRequiredService<RconService>();
+    try
+    {
+        if (k8s.KubernetesClientConfiguration.IsInCluster())
+        {
+            Console.WriteLine("[Startup] Detected in-cluster Kubernetes environment. Using KubernetesOrchestrator.");
+            return new FactorioLibrary.Services.Orchestrators.KubernetesOrchestrator(rcon);
+        }
+
+        FactorioLibrary.Services.Orchestrators.KubernetesOrchestrator k8sOrchestrator = new(rcon);
+        (bool isHealthy, string msg) = k8sOrchestrator.CheckHealthAsync().GetAwaiter().GetResult();
+        if (isHealthy)
+        {
+            Console.WriteLine($"[Startup] {msg}. Using KubernetesOrchestrator.");
+            return k8sOrchestrator;
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Kubernetes detection skipped: {ex.Message}");
+    }
+
+    Console.WriteLine("[Startup] Using DockerOrchestrator.");
+    return new FactorioLibrary.Services.Orchestrators.DockerOrchestrator(rcon);
+});
 builder.Services.AddSingleton<InstanceManager>();
 builder.Services.AddSingleton<RconService>();
 

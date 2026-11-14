@@ -103,12 +103,12 @@ else
                             </div>
 
                             <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="form-label text-muted">Game Port</label>
+                                <div class="col-md-4">
+                                    <label class="form-label text-muted">Factorio Port</label>
                                     <InputNumber @bind-Value="instance.Port" class="form-control bg-transparent text-white border-secondary" />
                                     <ValidationMessage For="@(() => instance.Port)" />
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label class="form-label text-muted">Factorio Version</label>
                                     <InputSelect @bind-Value="instance.AssignedVersion" class="form-select bg-transparent text-white border-secondary">
                                         @foreach (DockerTagInfo v in availableVersions)
@@ -117,6 +117,14 @@ else
                                         }
                                     </InputSelect>
                                     <ValidationMessage For="@(() => instance.AssignedVersion)" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label text-muted">Node Architecture</label>
+                                    <InputSelect @bind-Value="instance.TargetArchitecture" class="form-select bg-transparent text-white border-secondary">
+                                        <option value="Any" class="text-dark">Any (Let Cluster Decide)</option>
+                                        <option value="amd64" class="text-dark">x86_64 (amd64)</option>
+                                        <option value="arm64" class="text-dark">ARM64 (Raspberry Pi)</option>
+                                    </InputSelect>
                                 </div>
                             </div>
 

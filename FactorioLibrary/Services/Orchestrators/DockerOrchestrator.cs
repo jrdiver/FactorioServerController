@@ -85,6 +85,8 @@ public class DockerOrchestrator : IContainerOrchestrator
         return runningContainers.ContainsKey(instanceId);
     }
 
+    public string? GetContainerHostInfo(int instanceId) => null;
+
     public async Task<bool> StartContainerAsync(ServerInstance instance, string hostBaseMountPath, string localDataPath, string savesDir, bool loadLatest, bool generateNewSave)
     {
         string image = string.IsNullOrWhiteSpace(instance.AssignedVersion) ? "factoriotools/factorio:latest" : $"factoriotools/factorio:{instance.AssignedVersion}";
@@ -117,7 +119,7 @@ public class DockerOrchestrator : IContainerOrchestrator
                 $"GENERATE_NEW_SAVE={generateNewSave.ToString().ToLower()}"
             ];
 
-            if (!string.IsNullOrEmpty(instance.ActiveSaveName) && !loadLatest && !generateNewSave)
+            if (!string.IsNullOrEmpty(instance.ActiveSaveName) && !loadLatest)
             {
                 string saveNameWithoutExtension = instance.ActiveSaveName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? instance.ActiveSaveName.Substring(0, instance.ActiveSaveName.Length - 4) : instance.ActiveSaveName;
                 envVars.Add($"SAVE_NAME={saveNameWithoutExtension}");

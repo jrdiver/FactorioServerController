@@ -166,6 +166,8 @@ public class InstanceManager
         return _orchestrator.IsContainerRunning(instanceId);
     }
 
+    public string? GetHostInfo(int instanceId) => _orchestrator.GetContainerHostInfo(instanceId);
+
     public IAsyncEnumerable<string> GetLiveLogsAsync(int instanceId, CancellationToken cancellationToken) => _orchestrator.GetLiveLogsAsync(instanceId, cancellationToken);
 
     public async Task<List<string>> GetOfflineLogsAsync(int instanceId, int tail = 200)

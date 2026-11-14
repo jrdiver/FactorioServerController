@@ -1,0 +1,123 @@
+# Factorio Server Controller - Kubernetes / K3s Deployment Manifest
+# Apply with: kubectl apply -f kubernetes.yaml
+
+# 1. Service Account for the Controller
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: factorio-controller-sa
+  namespace: default
+---
+# 2. RBAC Role granting permissions required by KubernetesOrchestrator
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: factorio-controller-role
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - delete
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+---
+# 3. Bind the Role to the Service Account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: factorio-controller-rolebinding
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: factorio-controller-sa
+    namespace: default
+roleRef:
+  kind: Role
+  name: factorio-controller-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# 4. Persistent Storage for Controller Database, Keys, Backups, and Global Mods
+# Note: K3s's default 'local-path' provisioner bind-mounts a host folder and does not enforce
+# a hard quota, so this only uses actual file size on disk. If using Longhorn or block storage,
+# this sets the volume size limit.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: factorio-controller-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 20Gi
+---
+# 5. Controller Deployment
+# Note: In-cluster Kubernetes mode is auto-detected at startup via the mounted ServiceAccount.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: factorio-server-controller
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: factorio-controller
+  template:
+    metadata:
+      labels:
+        app: factorio-controller
+    spec:
+      serviceAccountName: factorio-controller-sa
+      containers:
+        - name: controller
+          image: ghcr.io/jrdiver/factorioservercontroller:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+            - containerPort: 8081
+              protocol: TCP
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: "Production"
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+          volumeMounts:
+            - name: controller-data
+              mountPath: /data
+      volumes:
+        - name: controller-data
+          persistentVolumeClaim:
+            claimName: factorio-controller-pvc
+---
+# 6. LoadBalancer Service to Expose the Controller Web UI
+apiVersion: v1
+kind: Service
+metadata:
+  name: factorio-controller-svc
+  namespace: default
+spec:
+  type: LoadBalancer
+  selector:
+    app: factorio-controller
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080

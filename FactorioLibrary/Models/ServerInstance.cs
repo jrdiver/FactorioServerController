@@ -23,6 +23,9 @@ public class ServerInstance
     [MaxLength(50)]
     public string? AssignedVersion { get; set; }
 
+    [MaxLength(20)]
+    public string TargetArchitecture { get; set; } = "Any";
+
     public int MaxPlayers { get; set; } = 0; // 0 means unlimited
 
     public string? Description { get; set; }

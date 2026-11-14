@@ -10,14 +10,22 @@
 <div class="glass-card mb-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h4><i class="bi bi-activity me-2"></i>Live Dashboard</h4>
-        @if (stats?.IsOnline == true)
-        {
-            <span class="badge bg-success">Online</span>
-        }
-        else
-        {
-            <span class="badge bg-danger">Offline</span>
-        }
+        <div class="d-flex align-items-center gap-2">
+            @if (!string.IsNullOrEmpty(stats?.HostIp))
+            {
+                <span class="badge bg-dark border border-secondary text-accent">
+                    <i class="bi bi-hdd-network me-1"></i>@stats.HostIp:@instance?.Port @(!string.IsNullOrEmpty(stats.NodeName) ? $"({stats.NodeName})" : "")
+                </span>
+            }
+            @if (stats?.IsOnline == true)
+            {
+                <span class="badge bg-success">Online</span>
+            }
+            else
+            {
+                <span class="badge bg-danger">Offline</span>
+            }
+        </div>
     </div>
 
     @if (instance == null || isLoadingStats)
